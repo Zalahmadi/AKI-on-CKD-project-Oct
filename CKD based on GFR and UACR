@@ -1,0 +1,148 @@
+Identify an adult, laboratory-confirmed CKD cohort excluding patients on dialysis at index. First explore where the necessary data are located, then implement the phenotype using verified sources.
+
+Prior temporary dialysis does not exclude a patient if recovery and dialysis discontinuation were documented on or before index.
+
+Study dates and historical lookback: [USE THE PROJECT’S ESTABLISHED DATES; OTHERWISE IDENTIFY AS UNKNOWN].
+
+Research question: Which adults have laboratory-confirmed CKD and are not on dialysis at index?
+
+Inputs: Laboratory measurements, demographics, encounters, diagnoses, and procedures. Verify what one row represents in each source.
+
+Operations: READ → FILTER → JOIN → DERIVE → AGGREGATE.
+
+Expected outputs: Source map, one row per patient, and phenotype summary.
+
+Checks: Valid chronicity pairs, adult age, dialysis assessment, and reconciled counts.
+
+1. Explore and locate the data
+
+   Start with the current Genie space, connected tables, accessible metadata, and existing project queries. Reuse verified mappings. Explore relevant schemas within the approved project scope without inventing table or column names.
+
+   Locate sources for:
+
+   - Patient identifiers, birth date, and the sex field required for eGFR calculation.
+   - Serum creatinine results, units, specimen dates, result status, and laboratory identifiers.
+   - UACR results and units; if necessary, urine albumin and urine creatinine from the same specimen.
+   - Encounter identifiers and care settings.
+   - Dialysis diagnoses, procedures, treatment records, billing records, and dialysis-status fields.
+   - Dialysis procedure notes or relevant clinical documentation, if accessible.
+
+   Return a source map showing catalog/schema/table, relevant columns, what one row represents, join keys, date coverage, and verified versus unresolved mappings.
+
+   Verify joins, missing keys, duplicate records, and potential row multiplication. Inspect metadata first, then use bounded, date-filtered queries. If narrative review is needed, begin with a bounded pilot of at most 100 documents.
+
+   Proceed to implementation when sources and scope are verified. If required sources or dates are unavailable, identify the missing input and provide parameterized SQL marked NOT EXECUTED.
+
+2. Restrict eligibility to adults
+
+   Require age ≥18 years at index. Exclude patients younger than 18.
+
+   Calculate age at each measurement and separately at index using birth date. Use only measurements obtained at age ≥18 for qualifying laboratory pairs. Do not use current age.
+
+   Report missing or unusable birth dates separately; do not assume these patients are adults.
+
+3. Require laboratory confirmation through either pathway
+
+   Include patients meeting at least one of:
+
+   - eGFR-confirmed: Two eligible outpatient/non-inpatient calculated eGFR measurements <60 mL/min/1.73 m², separated by ≥90 calendar days.
+   - UACR-confirmed: Two eligible outpatient/non-inpatient UACR measurements ≥30 mg/g, separated by ≥90 calendar days.
+
+   Chronicity must be established within the same marker. One abnormal eGFR plus one abnormal UACR cannot establish primary eligibility.
+
+   Patients independently meeting both pathways remain eligible and count once in the combined cohort. ICD diagnoses cannot substitute for laboratory confirmation.
+
+   Verify care-setting mappings, including emergency and observation encounters. Unknown setting is not confirmed non-inpatient status. Do not impose additional persistence requirements beyond the specified qualifying pairs.
+
+4. Calculate and standardize laboratory values
+
+   Use the 2021 race-free CKD-EPI creatinine equation:
+
+   `eGFR = 142 × min(SCr/κ,1)^α × max(SCr/κ,1)^−1.200 × 0.9938^Age × [1.012 if female; otherwise 1]`
+
+   SCr is in mg/dL. For females, κ=0.7 and α=−0.241; for males, κ=0.9 and α=−0.302. Convert creatinine from µmol/L to mg/dL by dividing by 88.4. Use age at measurement.
+
+   Do not impute missing calculation inputs or substitute an unverified eGFR equation. Missing eGFR inputs must not prevent independent eligibility through UACR.
+
+   Normalize UACR to mg/g. If deriving UACR from component results, require matched specimens and verified unit conversions. Do not substitute urine protein-to-creatinine ratio, dipstick protein, or albumin concentration alone.
+
+   Resolve corrected results and duplicates using documented source rules. Report invalid values, uncertain units, and excluded measurements.
+
+5. Define index and temporal rules
+
+   Reuse the project’s verified index definition. Otherwise, propose index as the earliest second qualifying measurement date completing either same-marker pair separated by ≥90 days, and label this convention for review.
+
+   Retain separate eGFR and UACR confirmation dates. Evaluate exclusions using only information available on or before index.
+
+6. Exclude dialysis at index using diagnoses, procedures, and treatment evidence
+
+   Exclude patients receiving maintenance dialysis or an active acute dialysis course at index.
+
+   Search all care settings, including inpatient records, for dialysis evidence. The outpatient/non-inpatient restriction applies to CKD-confirming laboratory measurements, not to dialysis ascertainment.
+
+   Inspect:
+
+   - Dialysis-dependence diagnoses, including ICD-10-CM Z99.2, with dates and available status information.
+   - Completed hemodialysis, peritoneal dialysis, and continuous kidney replacement therapy procedures. Candidate CPT codes include 90935, 90937, 90945, and 90947; these are examples rather than an exhaustive code set.
+   - Additional verified CPT/HCPCS, ICD-10-PCS, local treatment, and billing codes, including outpatient and home dialysis.
+   - Documentation of ongoing dialysis schedules, modality, dependence, initiation, discontinuation, and recovery.
+
+   Verify code descriptions and applicability to the study period. Do not require both a diagnosis and a procedure when one verified source establishes dialysis status.
+
+   Apply these rules:
+
+   - Exclude: Maintenance dialysis or an active acute dialysis course at index.
+   - Retain if otherwise eligible: Prior temporary dialysis with recovery and dialysis discontinuation documented on or before index.
+   - Do not retrospectively exclude: Dialysis first initiated after index.
+   - Do not treat as sufficient proof of active dialysis: Access placement alone, canceled orders, planned treatments, or an isolated historical procedure without evidence of ongoing treatment.
+   - Uncertain status: Historical dialysis with unresolved continuation or recovery. Report separately; do not silently classify these patients as dialysis-free.
+
+   Retain `any_dialysis_preindex` separately from `dialysis_at_index`. Any prior dialysis is not an automatic exclusion.
+
+   Show the exact temporal rule used to establish active dialysis. Reuse a verified project rule where available; otherwise identify the unresolved rule rather than inventing a lookback interval or treatment-frequency threshold.
+
+   Keep supporting source records, codes, dates, recovery evidence, and exclusion reasons inside REACH.
+
+7. Preserve phenotype and sensitivity flags
+
+   Derive:
+
+   - `egfr_confirmed`
+   - `uacr_confirmed`
+   - `confirmed_by_egfr_or_uacr`
+   - `confirmed_by_both`
+   - `cross_marker_only`
+   - `egfr_below_15_preindex`
+   - `any_dialysis_preindex`
+   - `prior_temporary_dialysis_recovered`
+   - `dialysis_at_index`
+   - `dialysis_status_uncertain`
+   - `age_at_index`
+   - `final_eligible`
+
+   Assess descriptive marker confirmation over the approved laboratory window. Retain confirmation dates and distinguish confirmation present at index from confirmation occurring afterward.
+
+   Define `cross_marker_only` as abnormal eGFR and abnormal UACR separated by ≥90 days, in either order, without either same-marker confirmation pathway during that window. Calculate this before filtering to the primary cohort and report it separately. Specify its sensitivity index and apply the same adult and dialysis rules.
+
+   Define `egfr_below_15_preindex` as any eligible calculated eGFR <15 on or before index. Keep this descriptive; it is not an additional exclusion.
+
+8. Return auditable outputs
+
+   Return the source map, generated SQL, applied filters, unresolved assumptions, and:
+
+   - A patient-level result retained inside REACH, including qualifying measurements, dates, intervals, confirmation dates, and dialysis assessment.
+   - A cohort waterfall showing entering, excluded, unresolved, and remaining patients at each step.
+   - A `phenotype_summary` table with columns `definition` and `patients`, containing: confirmed by eGFR; confirmed by UACR; confirmed by either; confirmed by both; cross-marker-only chronicity sensitivity; and pre-index eGFR below 15.
+   - Separate counts for dialysis at index, prior temporary dialysis with documented recovery, and uncertain dialysis status.
+
+   Label denominators and exclusion stages. Report primary phenotype counts before and after adult/dialysis restrictions.
+
+   Verify unique patient rows, threshold boundaries, ≥90-day spacing, age ≥18, and exclusion of dialysis-positive patients from the final cohort. Confirm recovered temporary-dialysis patients are not excluded solely for their history.
+
+   Verify:
+
+   `confirmed by either = confirmed by eGFR + confirmed by UACR − confirmed by both`
+
+   Confirm sensitivity-only patients do not overlap the primary cohort. Do not hide join errors with `DISTINCT`.
+
+   Keep source tables read-only and use temporary results. Finish with a compact task log showing operations, measured counts, checks, and execution status. Mark unavailable counts NOT MEASURED and identify any remaining source or implementation decision requiring review.
