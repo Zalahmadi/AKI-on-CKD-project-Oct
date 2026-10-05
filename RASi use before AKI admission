@@ -1,0 +1,152 @@
+Using the **previously identified cohort of non-dialysis CKD G3a–G5 patients with a creatinine-defined KDIGO AKI inpatient admission between 10/01/2021 and 09/30/2026**, determine which patients were **actively taking a renin-angiotensin system inhibitor (RASi) as an outpatient before the index AKI admission**.
+
+Do **not** redefine the CKD or AKI cohort.
+
+## Pre-admission exposure window
+
+Define the **primary pre-AKI RASi exposure window as the 90 calendar days immediately preceding each index AKI admission**.
+
+For each AKI encounter:
+
+- `exposure_window_end` = immediately before the inpatient admission date/time.
+- `exposure_window_start` = 90 calendar days before the admission date/time.
+- Do not count medications first initiated after the admission timestamp.
+
+A patient should be classified as having pre-AKI outpatient RASi exposure when there is credible evidence that the RASi was **active during this 90-day window and still being taken immediately before admission**.
+
+### Evidence that qualifies
+
+Count as qualifying evidence:
+
+- Active outpatient RASi prescription/order within the 90-day window.
+- Home medication or prior-to-admission medication recorded during admission reconciliation indicating the patient was taking the RASi before admission.
+- Outpatient medication list within the 90-day window showing the RASi as active/current.
+- Pharmacy dispensing/fill record within the window.
+- A prescription filled before the 90-day window whose documented days supply clearly extends into the 90-day window or through the admission date.
+- Explicit outpatient note/NLP documentation within the 90-day window stating that the patient is currently taking or continuing the RASi.
+- Admission H&P or medication-reconciliation note created on the admission date if it explicitly describes the medication as a **home/current/prior-to-admission medication**.
+
+### Evidence that does NOT qualify by itself
+
+Do not classify as exposed solely because of:
+
+- An old historical medication order with no evidence of continued use.
+- A RASi discontinued before the 90-day window.
+- A prescription whose documented end date or days supply ended before the exposure window.
+- A medication first started during the AKI admission.
+- Inpatient MAR administration without evidence of outpatient use before admission.
+- A RASi first prescribed at discharge.
+- A note stating "previously on," "stopped," "discontinued," "not taking," or similar historical/negative language.
+
+## Look-back beyond 90 days
+
+Genie may search medication records **before the 90-day window only to establish continuity**, but older records must not independently define exposure.
+
+Examples:
+
+- If a RASi was prescribed 120 days before admission with a 180-day active prescription period extending through admission, this may support exposure.
+- If a RASi appears 6 months before admission with no refill, active order, medication reconciliation, pharmacy fill, or note confirming continued use, do **not** count it as active exposure.
+
+Create:
+
+- `RASi_exposure_window_start`
+- `RASi_exposure_window_end`
+- `last_RASi_evidence_date`
+- `days_from_last_RASi_evidence_to_AKI_admission`
+- `evidence_overlaps_admission = YES/NO`
+- `pre_AKI_outpatient_RASi = YES/NO/UNCERTAIN`
+
+## NLP note search
+
+Use NLP across available outpatient and admission documentation.
+
+Search primarily for notes dated within the **90 days before admission**, plus the admission H&P and medication-reconciliation documentation when they explicitly describe **pre-admission/home medication use**.
+
+NLP must assess:
+
+- Medication name/ingredient
+- Current vs historical use
+- Negation
+- Discontinuation
+- Temporality
+- "Home medication" context
+- "Continue" vs "stop"
+- Patient-reported use
+
+Examples supporting exposure:
+
+- "currently taking losartan"
+- "home lisinopril"
+- "continues valsartan"
+- "on Entresto"
+- "continue ACE inhibitor"
+- "taking ARB at home"
+
+Examples against exposure:
+
+- "previously on lisinopril"
+- "losartan discontinued"
+- "no longer taking valsartan"
+- "patient stopped Entresto"
+- "ACE inhibitor held indefinitely"
+
+## Final classification
+
+### `YES`
+Credible evidence supports active outpatient RASi use during the 90-day pre-admission window and no reliable evidence shows that it was discontinued before admission.
+
+### `NO`
+Adequate outpatient medication information is available and shows no RASi use, or a prior RASi was clearly discontinued before the index admission.
+
+### `UNCERTAIN`
+Use when:
+
+- Medication history is incomplete.
+- Only remote/historical evidence exists.
+- Structured and NLP evidence conflict.
+- Start/stop dates are unclear.
+- It cannot be established whether the medication remained active immediately before admission.
+
+Do not convert `UNCERTAIN` to `YES` or `NO` based on assumptions.
+
+## Required output
+
+For every AKI encounter include:
+
+- Patient ID
+- Encounter ID
+- AKI admission date/time
+- `RASi_exposure_window_start`
+- `RASi_exposure_window_end`
+- `pre_AKI_outpatient_RASi`
+- RASi ingredient
+- RASi class
+- Combination-product ingredients
+- Dose/frequency if available
+- Most recent outpatient medication status
+- Last RASi evidence date
+- Days from last evidence to admission
+- Prescription/fill start date
+- Prescription/fill end date
+- Days supply if available
+- Home medication reconciliation status
+- NLP evidence present
+- NLP note date/type
+- NLP extracted phrase/status
+- Evidence source(s)
+- Number of independent sources
+- `RASi_exposure_confidence = HIGH/MODERATE/LOW`
+- Reason for classification
+
+Before writing the final SQL, show:
+
+1. Exact 90-day exposure-window logic
+2. How prescriptions beginning before the window but overlapping it are handled
+3. How pharmacy days supply is handled
+4. How admission medication reconciliation is used
+5. NLP temporality/negation logic
+6. How older medication history is used only for continuity
+7. Conflict-resolution hierarchy
+8. Final exposure classification logic
+
+Then generate the final **Databricks SQL/Spark SQL query**.
