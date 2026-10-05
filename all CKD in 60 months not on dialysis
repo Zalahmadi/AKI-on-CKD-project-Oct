@@ -1,0 +1,246 @@
+Build a **Databricks SQL/Spark SQL query** to identify all **adult patients age ≥18 years** with **CKD G3a through G5 based only on laboratory-reported creatinine-based eGFR**.
+
+## 1. Exact 60-month eligibility window
+
+Define the study/eligibility period as:
+
+**Start:** `10/01/2021 00:00:00`  
+**End:** `09/30/2026 23:59:59`
+
+This is the complete **60-month period ending September 30, 2026**.
+
+For a patient to enter the cohort:
+
+- The patient must have **at least TWO qualifying creatinine-based eGFR measurements <60 mL/min/1.73 m²**.
+- **Both qualifying eGFR measurements must have specimen collection dates within 10/01/2021 through 09/30/2026.**
+- The two qualifying measurements must be **at least 90 days apart**.
+- Do **not** use an eGFR before 10/01/2021 to satisfy the two-measurement eligibility requirement.
+- Do **not** use an eGFR after 09/30/2026 to satisfy eligibility.
+- Laboratory data outside this window should **not determine cohort inclusion**.
+
+A patient whose first qualifying eGFR is before 10/01/2021 but who has only one qualifying eGFR during the study window does **not** qualify.
+
+A patient with two qualifying eGFR values within the study window that are ≥90 days apart **does qualify**, assuming all other criteria are met.
+
+Create:
+
+- `study_window_start = 2021-10-01`
+- `study_window_end = 2026-09-30`
+- `first_qualifying_eGFR_date`
+- `second_qualifying_eGFR_date`
+- `days_between_qualifying_eGFRs`
+- `within_60_month_window = YES/NO`
+
+Require:
+
+`first_qualifying_eGFR_date >= 2021-10-01`
+
+AND
+
+`second_qualifying_eGFR_date <= 2026-09-30`
+
+AND
+
+`days_between_qualifying_eGFRs >= 90`
+
+## 2. Age requirement
+
+Include only patients who were:
+
+- **Age ≥18 years at the date of the first qualifying eGFR measurement within the study window.**
+
+Use date of birth and the actual specimen collection date of the first qualifying eGFR.
+
+Do not determine age using the end of the study period.
+
+## 3. CKD identification must be laboratory based
+
+Identify CKD using **reported estimated GFR derived from serum/plasma creatinine**.
+
+Search all available laboratory tables for creatinine-based eGFR results.
+
+Prefer structured laboratory component names, LOINC/component identifiers, or clearly labeled eGFR fields.
+
+Include only eGFR measurements that are clearly based on **serum/plasma creatinine**.
+
+Do not use:
+
+- ICD codes
+- Problem lists
+- CKD diagnosis fields
+- Billing diagnoses
+- Urine creatinine
+- Creatinine clearance
+- Measured GFR
+- Cystatin-C-only eGFR
+- Combined creatinine-cystatin C eGFR unless it can be clearly separated from creatinine-only eGFR
+- eGFR values calculated during dialysis treatments
+
+If several creatinine-based eGFR equations are present, identify the equation/type when available and report it. Do not silently combine clearly incompatible eGFR result types.
+
+## 4. Require chronicity
+
+A patient qualifies only if there are **at least TWO valid creatinine-based eGFR measurements <60 mL/min/1.73 m² within the defined 60-month study window and separated by at least 90 days**.
+
+Both values must satisfy:
+
+`eGFR <60 mL/min/1.73 m²`
+
+Create:
+
+- `first_qualifying_eGFR`
+- `first_qualifying_eGFR_date`
+- `second_qualifying_eGFR`
+- `second_qualifying_eGFR_date`
+- `days_between_qualifying_eGFRs`
+- `CKD_chronicity_confirmed = YES/NO`
+
+Require:
+
+`days_between_qualifying_eGFRs >= 90`
+
+Do not classify a patient as CKD from a single low eGFR.
+
+## 5. CKD GFR categories
+
+After chronicity is confirmed, assign the patient's CKD G-category using the **most recent valid creatinine-based eGFR within the study window, on or before 09/30/2026**:
+
+- **G3a:** eGFR 45 to <60 mL/min/1.73 m²
+- **G3b:** eGFR 30 to <45 mL/min/1.73 m²
+- **G4:** eGFR 15 to <30 mL/min/1.73 m²
+- **G5:** eGFR <15 mL/min/1.73 m²
+
+Create:
+
+- `most_recent_eGFR`
+- `most_recent_eGFR_date`
+- `CKD_G_stage = G3a / G3b / G4 / G5`
+
+Do not assign stage from ICD codes or problem-list documentation.
+
+If the patient's eGFR values cross stages over time, preserve the longitudinal values and use the **most recent valid creatinine-based eGFR within the eligibility window** for the primary G-stage assignment.
+
+## 6. Exclude dialysis patients
+
+The final cohort must represent **CKD G3a–G5 patients not receiving dialysis**.
+
+Search **all available dialysis-related clinical and procedural sources**, not only diagnosis tables.
+
+Search, when available:
+
+- Hemodialysis procedure notes
+- Dialysis treatment/session records
+- Outpatient dialysis records
+- Dialysis nursing notes
+- Dialysis flowsheets
+- Hemodialysis treatment documentation
+- Peritoneal dialysis treatment documentation
+- CRRT treatment documentation
+- SLED/PIRRT treatment documentation
+- Dialysis orders linked to completed treatment
+- Nephrology procedure notes documenting dialysis
+- Procedure tables
+- CPT/HCPCS dialysis procedure records
+- Dialysis scheduling/treatment tables
+- Vascular-access records when linked to actual dialysis treatment
+
+Do **not** use ICD diagnosis codes to identify CKD or dialysis status.
+
+Exclude a patient if there is reliable evidence that the patient was receiving:
+
+- Maintenance hemodialysis
+- Maintenance peritoneal dialysis
+- Chronic kidney replacement therapy
+- Repeated outpatient dialysis treatments
+- Any documented ongoing dialysis program
+
+Also exclude a patient if a **procedure note or dialysis treatment record clearly documents that dialysis was actually performed**.
+
+Do **not** classify a patient as being on dialysis solely because:
+
+- A dialysis catheter exists
+- A fistula/graft exists
+- A dialysis order was entered but cancelled
+- Dialysis was considered but not performed
+
+Create:
+
+- `dialysis_evidence_present = YES/NO/UNCERTAIN`
+- `dialysis_modality`
+- `dialysis_evidence_date`
+- `dialysis_source_table`
+- `dialysis_procedure_note_present = YES/NO`
+- `chronic_dialysis = YES/NO/UNCERTAIN`
+
+Exclude patients with:
+
+`chronic_dialysis = YES`
+
+or reliable documentation showing active dialysis treatment.
+
+Flag uncertain cases separately rather than automatically including them.
+
+## 7. Laboratory quality control
+
+- Use **specimen collection date/time** for determining whether the eGFR falls within the 60-month eligibility window.
+- Do not use result-posting time when specimen collection time is available.
+- Deduplicate repeated laboratory records representing the same specimen.
+- Exclude cancelled, corrected-invalid, or erroneous laboratory results when identifiable.
+- Standardize eGFR units to `mL/min/1.73 m²`.
+- Do not interpret an eGFR reported only as `>60` as qualifying CKD.
+- If an eGFR is reported as `<15`, retain the categorical information but do not invent an exact numeric value.
+- Keep the original laboratory value and original unit for audit purposes.
+
+## 8. Final output
+
+Return **one row per patient** containing:
+
+- Patient ID
+- Date of birth
+- Age at first qualifying eGFR
+- First qualifying eGFR
+- First qualifying eGFR date
+- Second qualifying eGFR
+- Second qualifying eGFR date
+- Days between qualifying measurements
+- Most recent creatinine-based eGFR within the study period
+- Most recent eGFR date
+- CKD G-stage
+- eGFR equation/type if available
+- `CKD_chronicity_confirmed`
+- `within_60_month_window`
+- `dialysis_evidence_present`
+- `chronic_dialysis`
+- `dialysis_procedure_note_present`
+- Dialysis evidence/source if present
+
+## 9. Cohort counts
+
+Provide:
+
+1. Total adults with ≥1 creatinine-based eGFR <60 during 10/01/2021–09/30/2026
+2. Patients with ≥2 eGFR values <60 during that same period
+3. Patients whose qualifying values are ≥90 days apart
+4. G3a count
+5. G3b count
+6. G4 count
+7. G5 count
+8. Patients excluded because of dialysis
+9. Patients with uncertain dialysis status
+10. Final non-dialysis CKD G3a–G5 cohort
+
+## 10. Schema inspection before SQL
+
+Before writing the final SQL:
+
+1. Inspect the available REACH schema.
+2. Identify every laboratory table containing creatinine-based eGFR.
+3. Identify patient/date/join keys.
+4. Identify the exact eGFR component names, IDs, and units.
+5. Identify all available dialysis treatment, procedure-note, flowsheet, and procedure tables.
+6. Show the exact `10/01/2021–09/30/2026` eligibility-window logic.
+7. Show the ≥90-day chronicity logic.
+8. Show the dialysis-exclusion logic.
+9. Do **not guess table names, column names, component IDs, or procedure fields**.
+
+Then generate the final **Databricks SQL/Spark SQL query** implementing the cohort exactly as defined above.
