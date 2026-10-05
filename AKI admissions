@@ -1,0 +1,57 @@
+Using the **previously created non-dialysis CKD G3a–G5 cohort**, identify all **inpatient admissions from 10/01/2021 through 09/30/2026** in which the patient had **creatinine-based KDIGO AKI**.
+
+Use **serum/plasma creatinine only. Do NOT use urine-output criteria and do NOT use ICD codes to define AKI.**
+
+### KDIGO AKI definition
+
+AKI is present if either occurs:
+
+- SCr increase **≥0.3 mg/dL within 48 hours**, OR
+- SCr increase to **≥1.5× baseline within 7 days**.
+
+Determine the **highest creatinine-based KDIGO stage reached** during the encounter:
+
+- **Stage 1:** 1.5–1.9× baseline OR ≥0.3 mg/dL increase
+- **Stage 2:** 2.0–2.9× baseline
+- **Stage 3:** ≥3.0× baseline OR acute increase in SCr to ≥4.0 mg/dL
+
+Use the most credible **stable pre-AKI serum creatinine** available before the AKI rise. Do not use eGFR to stage AKI, do not back-calculate baseline creatinine, and do not use discharge creatinine as baseline. If baseline is unavailable but the ≥0.3 mg/dL/48-hour criterion can be demonstrated from serial creatinine values, classify accordingly. Otherwise flag `UNABLE_TO_STAGE`.
+
+### Exclude dialysis/KRT during the AKI encounter
+
+Exclude any encounter with evidence that dialysis/KRT was **actually performed**, including:
+
+- Intermittent hemodialysis
+- CRRT
+- SLED/PIRRT
+- Peritoneal dialysis
+- Dialysis treatment/session records
+- Dialysis flowsheets
+- Completed dialysis orders
+- CPT/HCPCS or procedure records representing completed dialysis
+- **Hemodialysis/dialysis procedure notes**
+- Nephrology procedure notes documenting dialysis
+
+Search **all related procedure, treatment, flowsheet, billing, and clinical-note tables**. Do not rely on one source.
+
+Do not classify catheter placement, fistula/graft presence, a cancelled dialysis order, or discussion of dialysis as actual KRT unless treatment occurred.
+
+Create:
+
+- `AKI_KDIGO_confirmed`
+- `baseline_SCr`
+- `baseline_SCr_date`
+- `first_AKI_SCr`
+- `AKI_onset_datetime`
+- `peak_SCr`
+- `peak_SCr_date`
+- `KDIGO_AKI_stage`
+- `dialysis_during_encounter`
+- `dialysis_procedure_note_present`
+- `dialysis_modality`
+
+Return **one row per qualifying AKI inpatient encounter** and also report unique patient counts.
+
+Provide counts for Stage 1, Stage 2, Stage 3, unable-to-stage, dialysis-excluded encounters, and the final non-dialysis AKI cohort.
+
+First inspect the REACH schema and identify all relevant encounter, creatinine-lab, dialysis-treatment, procedure, flowsheet, and procedure-note tables. **Do not guess table or column names.** Then generate the final **Databricks SQL/Spark SQL query**.
