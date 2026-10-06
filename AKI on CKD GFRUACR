@@ -1,4 +1,4 @@
-Using the previously identified adult, non-dialysis G3a–G5 cohort, build a Databricks SQL/Spark SQL query to identify inpatient admissions during the last 60 months ending July 1, 2026, with serum-creatinine-defined KDIGO AKI criteria met by admission or within the first 24 hours of admission.
+Using the previously identified adult, non-dialysis G3a–G5 cohort, build a Databricks SQL/Spark SQL query to identify inpatient admissions dated October 1, 2021 through September 30, 2026, with serum-creatinine-defined KDIGO AKI criteria met by admission or within the first 24 hours of admission.
 
 Research question:
 Which existing cohort members met creatinine-based AKI criteria by admission or within the first 24 hours?
@@ -23,16 +23,19 @@ Start from the existing cohort:
 
 Do not rebuild the cohort, add ICD-based eligibility, or reinstate the removed requirement for eGFR measurements to be at least 90 days apart.
 
-Define the admission study period as the 60 months immediately preceding July 1, 2026:
+Define the admission study period as the complete 60-month period from October 1, 2021 through September 30, 2026, inclusive.
 
-- Start: July 1, 2021 at 00:00:00, inclusive.
-- End: July 1, 2026 at 00:00:00, exclusive.
-- This includes admissions from July 1, 2021 through June 30, 2026.
+Use these exact timestamp boundaries:
+
+- Start: October 1, 2021 at 00:00:00, inclusive.
+- End: October 1, 2026 at 00:00:00, exclusive.
+
+The exclusive upper boundary includes the entire day of September 30, 2026.
 
 Apply:
 
-admission_timestamp >= TIMESTAMP '2021-07-01 00:00:00'
-AND admission_timestamp < TIMESTAMP '2026-07-01 00:00:00'
+admission_timestamp >= TIMESTAMP '2021-10-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-10-01 00:00:00'
 
 Use the inpatient admission timestamp to determine study inclusion.
 
@@ -56,7 +59,7 @@ Assess every valid serum/plasma creatinine collected from assessment_start throu
 
 Also identify creatinine collected during the directly linked emergency-department or observation episode immediately preceding inpatient admission. If this already establishes AKI, classify it as present at admission and preserve the actual qualifying specimen timestamp. Do not include unrelated ED encounters.
 
-Retain admissions near the study-end boundary. Their complete 24-hour assessment window may extend into July 1, 2026 because admission time determines study inclusion.
+Retain admissions near the study-end boundary. Their complete 24-hour assessment window may extend into October 1, 2026 because admission time determines study inclusion.
 
 
 3. SERUM-CREATININE-ONLY KDIGO AKI CRITERIA
@@ -100,7 +103,7 @@ Do not use:
 
 Search available pre-admission laboratory results for valid comparison values.
 
-Reference creatinine may precede July 1, 2021 when needed for an admission near the beginning of the study period, provided it falls within the applicable 48-hour or 7-day comparison interval.
+Reference creatinine may precede October 1, 2021 when needed for an admission near the beginning of the study period, provided it falls within the applicable 48-hour or 7-day comparison interval.
 
 Do not restrict reference laboratory retrieval to the admission study window.
 
@@ -191,7 +194,7 @@ Report distinct patients and admissions separately.
 Provide counts for:
 
 - Existing cohort members with eligible inpatient admissions.
-- Total assessed admissions during July 1, 2021 through June 30, 2026.
+- Total assessed admissions during October 1, 2021 through September 30, 2026.
 - YES admissions.
 - NO admissions.
 - UNCERTAIN admissions.
@@ -233,6 +236,10 @@ Generate readable Databricks SQL/Spark SQL using named intermediate steps.
 Keep source tables read-only and patient-level results inside REACH.
 
 Return an execution log with input sources, transformations, output counts, validation checks, and execution status. Mark unexecuted code NOT EXECUTED and unknown counts NOT MEASURED.
+
+Complete this AKI-identification task and present the results for review before proceeding to medication exposure or outcomes.
+
+At review, ask whether admissions with only reference creatinine older than 7 days should remain UNCERTAIN or also be evaluated in a separate presumed-AKI sensitivity analysis.
 
 Complete this AKI-identification task and present the results for review before proceeding to medication exposure or outcomes.
 
