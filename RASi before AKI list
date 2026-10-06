@@ -1,0 +1,432 @@
+Using *** build a Databricks SQL query to identify patients with documented active outpatient RASi use immediately before each qualifying AKI admission.
+
+Use a 90-day pre-admission evidence window. Medication use at any point during those 90 days is not sufficient unless the evidence supports continued use immediately before admission.
+
+TASK
+
+Input:
+- Existing AKI cohort: [FILL IN VERIFIED COHORT TABLE/VIEW INSIDE REACH].
+- RASi reference list: acei_arb_10062026.xlsx, Sheet1.
+- Reference-list table/view inside REACH: [FILL IN VERIFIED REFERENCE TABLE/VIEW].
+- Available outpatient prescriptions, medication histories, admission medication reconciliation, pharmacy dispensing records, and clinical notes.
+
+Operations:
+READ, NORMALIZE, JOIN, FILTER, DERIVE, and AGGREGATE.
+
+Output:
+- One row per AKI admission with pre-admission RASi exposure classified as YES, NO, or UNCERTAIN.
+- Supporting medication-level evidence.
+- A distinct-patient result identifying patients exposed before at least one qualifying AKI admission.
+
+Primary check:
+Every YES admission must have a medication matching the reference list and supporting evidence of active outpatient use immediately before that admission.
+
+
+1. START FROM THE EXISTING AKI COHORT
+
+Use the previously identified adult, non-dialysis G3a–G5 cohort with serum-creatinine-defined AKI identified by admission or within the first 24 hours.
+
+Include the existing qualifying inpatient admissions dated October 1, 2021 through September 30, 2026.
+
+Use:
+
+admission_timestamp >= TIMESTAMP '2021-10-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-10-01 00:00:00'
+
+Do not rebuild the CKD or AKI phenotype, change its eligibility rules, or introduce additional exclusions.
+
+Preserve all existing cohort admissions as the starting denominator.
+
+Evaluate exposure separately for each admission. The same patient may be exposed before one admission and unexposed or uncertain before another.
+
+Preserve existing cohort variables, including kidney-function category and AKI information when available.
+
+
+2. USE THE SUPPLIED MEDICATION LIST
+
+The reference workbook contains 1,039 medication records with 1,039 unique medication_id values:
+
+- 557 records labeled ACEi.
+- 482 records labeled ARB.
+
+Its columns are:
+
+medication_class
+medication_id
+medication_name
+simple_generic
+generic_name
+
+Use all reference-list rows as candidate medication identifiers, subject to the exposure and route rules below.
+
+First verify that the workbook or its imported reference table is accessible inside REACH. Do not assume Genie can access an attachment from another application.
+
+If the reference table is unavailable, identify that missing input and prepare placeholder-based SQL. Do not invent medication IDs or claim that the complete list was used.
+
+Validate:
+
+- Total row count.
+- Distinct medication_id count.
+- Missing or duplicate IDs.
+- Counts by original medication_class.
+- Whether reference IDs use the same identifier system as the clinical medication tables.
+
+Do not assume medication_id is an RxNorm identifier.
+
+Normalize identifier types without changing their values. Treat the literal string "NULL" and blank generic fields as missing values.
+
+Do not discard a medication solely because simple_generic or generic_name is missing. Use the medication_id, medication_name, and verified medication dictionary to resolve it.
+
+Use this matching priority:
+
+1. Exact medication_id match after verifying identifier compatibility.
+2. A verified crosswalk between the source medication identifier and the reference medication_id.
+3. Verified product or ingredient mappings from the local medication dictionary or RxNorm, preserving the relationship to the supplied list.
+4. Normalized name matching as a candidate-retrieval method, followed by verification.
+
+Record the match method.
+
+Do not rely exclusively on broad substring searches such as "pril" or "sartan".
+
+Report potentially relevant products outside the reference list separately. Do not silently expand the primary medication definition.
+
+
+3. PRESERVE COMBINATION PRODUCTS AND CORRECT CLASSIFICATION
+
+Keep the original workbook medication_class unchanged in a source field. Create separate normalized ingredient and drug-class fields.
+
+The list includes the following ACE inhibitor ingredients:
+
+- Benazepril.
+- Captopril.
+- Enalapril.
+- Fosinopril.
+- Lisinopril.
+- Moexipril.
+- Perindopril.
+- Quinapril.
+- Ramipril.
+- Trandolapril.
+- Enalaprilat, including intravenous products.
+
+The list includes the following ARB ingredients:
+
+- Azilsartan.
+- Candesartan.
+- Eprosartan.
+- Irbesartan.
+- Losartan.
+- Olmesartan.
+- Telmisartan.
+- Valsartan.
+
+Include listed fixed-dose combination products containing these ingredients. Preserve all active ingredients, including non-RASi components.
+
+Handle these combinations explicitly:
+
+- Sacubitril/valsartan, including Entresto:
+  Include when outpatient exposure criteria are met.
+  Classify the product as ARNI.
+  Preserve the original workbook ARB label separately.
+  Preserve valsartan as its ARB ingredient.
+
+- Aliskiren/valsartan, including Valturna:
+  Include when outpatient exposure criteria are met.
+  Classify as ARB_PLUS_DIRECT_RENIN_INHIBITOR.
+  Preserve both active ingredients.
+
+Do not infer that aliskiren-only products are included merely because aliskiren/valsartan appears in the list.
+
+Intravenous enalaprilat or another acute-care administration must not automatically count as outpatient RASi use. Require explicit evidence of outpatient/home use if such an entry is considered for exposure.
+
+Do not infer the patient's age from medication catalog labels such as ADULT or PEDIATRIC. Use the existing cohort's patient-level eligibility.
+
+Investigational or study-labeled products require clear documentation of the actual active drug and outpatient use. Ambiguous treatment assignment cannot establish exposure.
+
+
+4. DEFINE THE PRE-ADMISSION EXPOSURE WINDOW
+
+For each qualifying admission:
+
+RASi_exposure_window_start = admission_timestamp - INTERVAL 90 DAYS
+RASi_exposure_window_end = admission_timestamp
+
+Use a half-open interval:
+
+evidence_timestamp >= RASi_exposure_window_start
+AND evidence_timestamp < admission_timestamp
+
+The target is active outpatient use immediately before admission.
+
+Allow medication evidence before October 1, 2021 when needed for an admission near the study start.
+
+Search older medication records only to establish continuity, such as a prescription or dispensing interval beginning before the 90-day window and extending through admission.
+
+An older historical prescription alone does not establish exposure.
+
+Admission medication reconciliation or an admission H&P may be documented after the admission timestamp but can support exposure when it explicitly describes medication use before admission.
+
+For this exception:
+
+- Preserve the documentation timestamp.
+- Preserve the effective medication-use time or stated pre-admission context.
+- Flag the evidence as retrospective home-medication confirmation.
+- Do not treat an inpatient medication list or inpatient initiation as home use.
+- Do not use later discharge prescriptions to establish pre-admission exposure.
+
+ED and observation medication administrations are acute-care records. They do not independently establish outpatient use.
+
+
+5. INSPECT AVAILABLE MEDICATION AND NOTE SOURCES
+
+Reuse verified project mappings. Inspect missing sources within the relevant REACH project scope.
+
+Search available:
+
+- Outpatient prescription and medication-order tables.
+- Longitudinal medication histories.
+- Home and prior-to-admission medication lists.
+- Admission medication-reconciliation records.
+- Patient-reported medication-use fields.
+- Pharmacy dispensing or fill records.
+- Prior discharge medication lists when continued outpatient use can be established.
+- Outpatient notes.
+- Admission H&P and medication-reconciliation notes.
+
+Identify patient keys, encounter keys, medication identifiers, record identifiers, status fields, start dates, stop dates, fill dates, days supply, route, and documentation timestamps.
+
+Explain whether medication status is historical as of the admission or only the current status at extraction. Do not apply today's discontinued status retrospectively without its effective date.
+
+Identify unavailable sources and coverage limitations.
+
+Do not guess table names, column names, status meanings, medication identifiers, or note fields.
+
+
+6. DETERMINE WHETHER USE CONTINUED THROUGH ADMISSION
+
+Evaluate each medication's timeline using all available evidence.
+
+Evidence supporting exposure may include:
+
+- Admission medication reconciliation stating that the patient was taking the medication at home.
+- Explicit recent outpatient documentation of current use.
+- An outpatient prescription with a credible active period extending through admission.
+- A dispensing record whose documented days supply covers admission.
+- Corroborating evidence from more than one independent source.
+
+A prescription or fill within the 90-day window is insufficient if its documented coverage ended before admission and there is no evidence of continued use.
+
+For dispensing records:
+
+- Use the actual dispensing date and documented days supply.
+- Document the covered interval and its endpoint convention.
+- Do not invent missing days supply.
+- Do not assume a refill, grace period, or stockpiling.
+- Recognize that dispensing supports medication availability but does not prove ingestion.
+
+For prescriptions and medication histories:
+
+- Use effective start and stop dates.
+- Distinguish treatment cessation from administrative cancellation, order replacement, and dose changes.
+- Do not treat a missing end date as proof of indefinite use.
+- A current active flag alone must not override explicit documentation that the patient stopped taking the medication.
+
+A medication stopped before presentation does not establish active pre-admission exposure.
+
+A documented home medication held during the linked ED episode or at admission because of AKI does not erase the preceding outpatient exposure. Preserve the hold timing separately.
+
+A medication first started during the ED episode, hospitalization, or at discharge does not establish pre-admission outpatient exposure.
+
+Inpatient MAR administration alone does not qualify.
+
+
+7. USE NOTE EVIDENCE AND RESOLVE CONFLICTS
+
+Use available approved text-processing or NLP capabilities to supplement structured evidence.
+
+Search notes within the 90-day window and the admission documentation described above. Use older notes only when needed to establish continuity.
+
+Extract:
+
+- Medication or ingredient.
+- Current versus historical use.
+- Taking versus prescribed status.
+- Negation.
+- Start, stop, and hold context.
+- Relevant dates.
+- Home versus inpatient context.
+- Patient versus another person's medication history.
+- Note type and documentation timestamp.
+
+Examples supporting pre-admission use:
+
+- "Taking losartan at home."
+- "Continues lisinopril."
+- "Home Entresto held on admission."
+
+Examples that do not independently establish active use:
+
+- "Previously took losartan."
+- "Stopped lisinopril two weeks ago."
+- "Consider starting an ARB."
+- "Started valsartan during this hospitalization."
+
+Do not assume that every "hold" or "discontinue" statement refers to stopping medication before admission. Resolve its timing.
+
+Prioritize evidence by explicitness, effective date, and proximity to admission. Admission reconciliation documenting actual home use generally provides stronger evidence than an older medication list.
+
+Do not let an older prescription override newer explicit nonuse. Do not count copied medication lists as independent confirmations.
+
+If reliable sources remain contradictory, classify the affected exposure as UNCERTAIN and preserve the conflict.
+
+If only simple SQL text matching is available, describe it as rule-based text screening. Do not claim that regex matching provides validated clinical NLP.
+
+Keep note excerpts and patient-level evidence inside REACH.
+
+
+8. FINAL EXPOSURE CLASSIFICATION
+
+Create:
+
+pre_AKI_outpatient_RASi = YES / NO / UNCERTAIN
+
+YES:
+At least one reference-list medication has credible evidence of active outpatient use immediately before admission, without an unresolved contradiction about that medication's use.
+
+NO:
+Adequate medication ascertainment supports no active use of any reference-list RASi immediately before admission.
+
+Stopping one RASi does not establish NO if another RASi was continued or started.
+
+UNCERTAIN:
+Exposure cannot be resolved because of incomplete medication histories, historical-only records, unclear timing, insufficient continuity evidence, uncertain medication identity, or conflicting sources.
+
+Absence of a matched record is not sufficient for NO.
+
+Classify individual medications first, then summarize at admission level:
+
+- Any reliably confirmed active RASi establishes admission-level YES.
+- If none is confirmed and potentially active use remains unresolved, assign UNCERTAIN.
+- Assign NO only when medication ascertainment is adequate and no active RASi remains.
+
+Optionally create:
+
+RASi_exposure_confidence = HIGH / MODERATE / LOW
+
+Define the confidence rules explicitly. Confidence labels must not convert insufficient evidence into YES or NO.
+
+
+9. REQUIRED RESULTS
+
+A. Admission-level audit result
+
+Return one row per existing AKI admission with:
+
+- Patient ID.
+- Encounter ID.
+- Admission timestamp.
+- Existing kidney-function category and AKI variables.
+- Exposure-window start and end.
+- pre_AKI_outpatient_RASi.
+- Exposure confidence, if used.
+- Matched medication IDs and names.
+- Original workbook medication classes.
+- Normalized drug classes.
+- RASi ingredients and all combination-product ingredients.
+- Dose, frequency, and route when available.
+- Most recent relevant outpatient medication status.
+- Prescription start and effective stop dates.
+- Fill date and days supply when available.
+- Coverage-through-admission indicator.
+- Last pre-admission evidence timestamp.
+- Days from that evidence to admission.
+- Admission home-medication confirmation indicator.
+- Retrospective documentation timestamp when applicable.
+- Structured and note evidence indicators.
+- Evidence source tables and record identifiers.
+- Number of independent sources.
+- Matching method.
+- Missing-data and conflict flags.
+- Reason for the final classification.
+
+If several medications qualify, use arrays or a linked detail result without multiplying admission rows.
+
+B. Medication-level evidence result
+
+Return one row per admission, medication, and distinct supporting evidence record. Preserve the information needed to audit matching, timing, and classification.
+
+C. Exposed-admission result
+
+Filter the admission-level result to:
+
+pre_AKI_outpatient_RASi = YES
+
+D. Distinct-patient result
+
+Return one row per patient with at least one YES admission, including:
+
+- Number of qualifying AKI admissions.
+- Number of exposed admissions.
+- First and last exposed admission dates.
+- Exposed encounter IDs.
+
+Do not apply one admission's exposure status to every admission for that patient.
+
+
+10. COUNTS, VALIDATION, AND FINAL SQL
+
+Report admissions and distinct patients separately.
+
+Provide:
+
+- Total starting AKI admissions and patients.
+- YES, NO, and UNCERTAIN admissions.
+- Patients with at least one YES admission.
+- Exposed admissions by normalized drug class.
+- Fixed-dose combination exposure.
+- Sacubitril/valsartan exposure.
+- Aliskiren/valsartan exposure.
+- Exposure supported by structured data.
+- Exposure supported by notes.
+- Cases where notes added evidence absent from structured data.
+- Cases with conflicting evidence.
+- Cases with insufficient medication ascertainment.
+- Unmatched reference medication IDs.
+
+Explain that patient counts across exposure categories or drug classes may overlap.
+
+Verify:
+
+- YES + NO + UNCERTAIN equals the original admission denominator.
+- Every YES admission has verified medication matching and qualifying temporal evidence.
+- No YES classification depends solely on inpatient initiation or MAR administration.
+- No NO classification is based only on missing records.
+- Reference-list joins do not multiply admissions.
+- The admission-level result has one row per original AKI admission.
+- The distinct-patient exposed result equals the distinct patients in the exposed-admission result.
+
+Check representative cases, including:
+
+- Home RASi held at admission.
+- RASi stopped before presentation.
+- Inpatient-only initiation.
+- Older dispensing with supply covering admission.
+- Recent dispensing with supply ending before admission.
+- Missing medication history.
+- A switch from one RASi to another.
+- A combination product labeled ARB in the source list.
+
+Before final SQL, show the verified sources, join keys, reference-list validation, matching rules, exposure-window logic, source-priority rules, and missing-data handling.
+
+Then generate complete Databricks SQL/Spark SQL with readable named intermediate steps for medication mapping, candidate evidence, temporal assessment, conflict resolution, admission classification, and patient aggregation.
+
+Keep source tables read-only. Keep patient-level results inside REACH.
+
+If a source or capability is unavailable, state the limitation and provide the corresponding placeholder or structured-data-only implementation without claiming the missing source was searched.
+
+Return an execution log with measured counts and checks. Mark code NOT EXECUTED and counts NOT MEASURED when applicable.
+
+Present unresolved exposure cases and their reasons for review before proceeding to outcomes or treatment comparisons.
+
+Suggested filename:
+prompts/04_identify_pre_admission_rasi.md
