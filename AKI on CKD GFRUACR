@@ -1,0 +1,239 @@
+Using the previously identified adult, non-dialysis G3a–G5 cohort, build a Databricks SQL/Spark SQL query to identify inpatient admissions during the last 60 months ending July 1, 2026, with serum-creatinine-defined KDIGO AKI criteria met by admission or within the first 24 hours of admission.
+
+Research question:
+Which existing cohort members met creatinine-based AKI criteria by admission or within the first 24 hours?
+
+Inputs:
+Existing cohort, inpatient admissions, and serum/plasma creatinine results.
+
+Operations:
+JOIN, FILTER, DERIVE, and AGGREGATE.
+
+Expected output:
+One row per inpatient admission, with AKI classification and supporting creatinine pairs.
+
+Primary validation:
+Every positive admission must have a valid qualifying creatinine pair within the specified time intervals.
+
+
+1. STARTING POPULATION AND EXACT ADMISSION WINDOW
+
+Start from the existing cohort:
+[FILL IN EXISTING COHORT TABLE/VIEW INSIDE REACH]
+
+Do not rebuild the cohort, add ICD-based eligibility, or reinstate the removed requirement for eGFR measurements to be at least 90 days apart.
+
+Define the admission study period as the 60 months immediately preceding July 1, 2026:
+
+- Start: July 1, 2021 at 00:00:00, inclusive.
+- End: July 1, 2026 at 00:00:00, exclusive.
+- This includes admissions from July 1, 2021 through June 30, 2026.
+
+Apply:
+
+admission_timestamp >= TIMESTAMP '2021-07-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-07-01 00:00:00'
+
+Use the inpatient admission timestamp to determine study inclusion.
+
+Return one row per inpatient admission. Retain multiple eligible admissions per patient.
+
+Reuse verified project mappings. Inspect missing encounter and laboratory mappings without guessing table names, column names, or component IDs.
+
+Preserve the original cohort G-category. Separately flag whether the qualifying eGFR evidence predates each admission. Do not use later laboratory evidence to label kidney dysfunction as pre-existing at an earlier admission.
+
+
+2. FIRST-24-HOUR ASSESSMENT WINDOW
+
+For each eligible admission, define:
+
+assessment_start = inpatient admission timestamp
+assessment_end = inpatient admission timestamp + INTERVAL 24 HOURS
+
+Use specimen collection timestamps rather than result-posting timestamps.
+
+Assess every valid serum/plasma creatinine collected from assessment_start through assessment_end, inclusive.
+
+Also identify creatinine collected during the directly linked emergency-department or observation episode immediately preceding inpatient admission. If this already establishes AKI, classify it as present at admission and preserve the actual qualifying specimen timestamp. Do not include unrelated ED encounters.
+
+Retain admissions near the study-end boundary. Their complete 24-hour assessment window may extend into July 1, 2026 because admission time determines study inclusion.
+
+
+3. SERUM-CREATININE-ONLY KDIGO AKI CRITERIA
+
+An admission qualifies when either of the following criteria is established by admission or within the first 24 hours.
+
+Criterion A: Absolute creatinine rise
+
+A later serum creatinine is at least 0.3 mg/dL above an earlier measured value collected no more than 48 hours earlier.
+
+Require:
+
+- later_creatinine - earlier_creatinine >= 0.3 mg/dL
+- The earlier specimen precedes the later specimen.
+- Elapsed time between specimens is no more than 48 hours.
+
+Criterion B: Relative creatinine rise
+
+A later serum creatinine is at least 1.5 times an earlier measured reference value collected within the preceding 7 days.
+
+Require:
+
+- later_creatinine / earlier_creatinine >= 1.5
+- The earlier specimen precedes the later specimen.
+- Elapsed time between specimens is no more than 7 days.
+
+For every assessed creatinine, search backward from its specimen timestamp for qualifying earlier measurements. Compare samples in chronological order and preserve the supporting pair.
+
+The 24-hour assessment window determines when AKI must be identified. It does not replace the 48-hour or 7-day creatinine comparison intervals.
+
+Do not use:
+
+- Urine-output criteria.
+- AKI diagnosis codes.
+- Changes in eGFR.
+- Dialysis initiation as an independent AKI criterion.
+- An elevated creatinine value alone without evidence of a qualifying acute rise.
+
+
+4. PRE-ADMISSION AND MISSING REFERENCE CREATININE
+
+Search available pre-admission laboratory results for valid comparison values.
+
+Reference creatinine may precede July 1, 2021 when needed for an admission near the beginning of the study period, provided it falls within the applicable 48-hour or 7-day comparison interval.
+
+Do not restrict reference laboratory retrieval to the admission study window.
+
+For the primary automated phenotype:
+
+- Use measured creatinine comparisons within the intervals specified above.
+- Older baseline creatinine may support clinical review but must not automatically establish that a rise occurred within 7 days.
+- Do not back-calculate creatinine from an assumed normal eGFR.
+- Do not use later inpatient nadirs or measurements collected after the 24-hour assessment deadline to establish eligibility.
+- Do not treat missing reference measurements as evidence that AKI was absent.
+
+
+5. ADMISSION-LEVEL CLASSIFICATION
+
+Create:
+
+AKI_within_24h = YES / NO / UNCERTAIN
+
+Assign YES when at least one valid creatinine pair satisfies criterion A or B by the assessment deadline, using the linked ED/observation episode or first-24-hour inpatient measurements described above.
+
+Assign NO when neither criterion is met and adequate measured comparison data are available to assess both criteria. Document the operational rule used to determine data adequacy.
+
+Assign UNCERTAIN when missing, invalid, poorly timed, or insufficient comparison data prevent reliable assessment.
+
+Separately identify:
+
+- AKI already demonstrated at admission, including qualifying evidence from the directly linked ED/observation episode.
+- AKI first detected after admission within the first 24 hours.
+
+Preserve the earliest qualifying specimen timestamp and the elapsed hours relative to inpatient admission. A qualifying linked ED specimen may have a negative elapsed-hour value.
+
+Do not describe all cases detected within 24 hours as proven community-acquired AKI.
+
+
+6. LABORATORY QUALITY CONTROL
+
+- Use serum/plasma creatinine only.
+- Normalize creatinine to mg/dL.
+- Convert micromol/L to mg/dL by dividing by 88.4.
+- Preserve original values and units.
+- Exclude cancelled, erroneous, or invalid results when identifiable.
+- Deduplicate records representing the same specimen using a documented rule.
+- Retain the valid final corrected result when the source supports that determination.
+- Flag ambiguous timestamps, units, or values instead of inventing them.
+- Verify timestamp and timezone consistency across admission and laboratory sources.
+- Do not hide encounter-join errors using unexplained DISTINCT operations.
+
+
+7. REQUIRED OUTPUT
+
+Return one row per assessed inpatient admission containing:
+
+- Patient ID.
+- Encounter ID.
+- Admission and discharge timestamps.
+- Original cohort G-category.
+- Flag indicating whether cohort-defining eGFR evidence predates admission.
+- Study-window start and exclusive end.
+- Assessment start and deadline.
+- AKI_within_24h.
+- Criterion met: absolute rise, relative rise, or both.
+- Earliest qualifying specimen timestamp.
+- Hours from admission to the earliest qualifying specimen.
+- Qualifying creatinine value.
+- Reference creatinine value.
+- Both specimen timestamps.
+- Elapsed comparison hours.
+- Absolute creatinine rise.
+- Creatinine ratio.
+- Whether supporting evidence came from the linked ED/observation episode.
+- Whether AKI was demonstrated at admission or first detected afterward within 24 hours.
+- Laboratory source tables and specimen identifiers.
+- Classification reason.
+- Missing-data or quality flags.
+
+If different pairs establish the absolute and relative criteria, preserve both supporting pairs in separate fields or a linked evidence result.
+
+Return both:
+
+- An audit result containing all assessed admissions.
+- A filtered result containing only AKI_within_24h = YES.
+
+
+8. COUNTS AND VALIDATION
+
+Report distinct patients and admissions separately.
+
+Provide counts for:
+
+- Existing cohort members with eligible inpatient admissions.
+- Total assessed admissions during July 1, 2021 through June 30, 2026.
+- YES admissions.
+- NO admissions.
+- UNCERTAIN admissions.
+- Absolute-rise-only admissions.
+- Relative-rise-only admissions.
+- Admissions satisfying both criteria.
+- AKI demonstrated at admission.
+- AKI first detected after admission within 24 hours.
+
+Verify:
+
+- YES + NO + UNCERTAIN equals all assessed admissions.
+- Every YES admission has a valid supporting creatinine pair.
+- Every qualifying pair satisfies the applicable 48-hour or 7-day interval.
+- Every qualifying later specimen falls within the permitted assessment period or directly linked pre-admission ED/observation episode.
+- Every admission meets the exact study-window boundaries.
+- Final results contain one row per admission.
+- Encounter and laboratory joins do not unintentionally multiply admissions.
+
+
+9. SCHEMA VERIFICATION AND FINAL SQL
+
+Before generating final SQL, show:
+
+- Existing cohort source.
+- Verified inpatient encounter sources.
+- Verified serum/plasma creatinine sources and component identifiers.
+- Patient, encounter, and specimen join keys.
+- Rules linking ED/observation episodes to inpatient admissions.
+- Admission and specimen timestamp rules.
+- Exact admission-window logic.
+- First-24-hour assessment logic.
+- Absolute and relative creatinine comparison logic.
+- Missing-data and classification rules.
+- Deduplication and corrected-result handling.
+
+Generate readable Databricks SQL/Spark SQL using named intermediate steps.
+
+Keep source tables read-only and patient-level results inside REACH.
+
+Return an execution log with input sources, transformations, output counts, validation checks, and execution status. Mark unexecuted code NOT EXECUTED and unknown counts NOT MEASURED.
+
+Complete this AKI-identification task and present the results for review before proceeding to medication exposure or outcomes.
+
+At review, ask whether admissions with only reference creatinine older than 7 days should remain UNCERTAIN or also be evaluated in a separate presumed-AKI sensitivity analysis.
