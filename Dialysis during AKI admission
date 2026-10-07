@@ -1,0 +1,305 @@
+Using *** build a Databricks SQL query to identify which patients had a dialysis billing/procedure code OR a hemodialysis procedure note documenting treatment during that same admission.
+
+Use OR logic. Either qualifying source is sufficient; do not require both.
+
+
+1. STARTING COHORT
+
+Start from the existing admission-level results:
+
+[***]
+
+Include only admissions satisfying:
+
+AKI_within_24h = 'YES'
+AND pre_AKI_outpatient_RASi = 'YES'
+
+Retain the original admission dates:
+
+admission_timestamp >= TIMESTAMP '2021-10-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-10-01 00:00:00'
+
+Do not rebuild the CKD, AKI, or RASi definitions.
+
+Create a named intermediate result:
+
+rasi_exposed_aki_admissions
+
+Use one row per qualifying admission. Retain multiple qualifying admissions per patient.
+
+Do not include other admissions merely because the same patient belongs to the cohort.
+
+Do not exclude patients because dialysis was newly performed during the index admission. Dialysis during this admission is the outcome being identified.
+
+
+2. OBSERVATION WINDOW: THE ENTIRE SAME ADMISSION
+
+For each qualifying admission, search from inpatient admission through discharge:
+
+dialysis_observation_start = admission_timestamp
+dialysis_observation_end = discharge_timestamp
+
+Use the actual treatment or service date/time to determine whether dialysis occurred during this interval.
+
+Do not restrict dialysis ascertainment to:
+
+- The first 24 hours of admission.
+- The pre-admission medication window.
+- The period before September 30, 2026 if the qualifying admission continued beyond that date.
+
+Follow qualifying admissions through discharge when data are available.
+
+Exclude dialysis occurring before admission, after discharge, or during another admission.
+
+For an ongoing admission or incomplete follow-up, preserve the available observation endpoint and flag incomplete ascertainment. A positive event can still qualify, but absence of evidence must not be treated as a definitive negative.
+
+Use verified encounter or hospital-account links. Patient ID alone is insufficient.
+
+If only a service date is available, require reliable linkage to the same inpatient admission and flag date-only timing. Ambiguous admission-day or discharge-day events should remain unresolved rather than being assigned automatically.
+
+
+3. DIALYSIS BILLING OR PROCEDURE-CODE EVIDENCE
+
+Inspect available professional billing, facility billing, procedure, and charge-detail sources.
+
+Identify:
+
+- Coding system.
+- Procedure code and description.
+- Service or procedure date/time.
+- Patient and encounter/account identifiers.
+- Claim or charge-line identifier.
+- Claim version and cancellation/reversal status.
+- Place of service when available.
+
+Use a verified dialysis-treatment code set appropriate to the service year.
+
+Seed codes to verify include:
+
+CPT:
+- 90935 and 90937: hemodialysis procedures.
+- 90945 and 90947: dialysis procedures other than hemodialysis.
+
+ICD-10-PCS:
+- 5A1D70Z: intermittent urinary filtration, under 6 hours per day.
+- 5A1D80Z: prolonged intermittent urinary filtration, 6–18 hours per day.
+- 5A1D90Z: continuous urinary filtration, over 18 hours per day.
+
+These are starting codes, not an assumed exhaustive local code set.
+
+Inspect available HCPCS and local procedure/charge dictionaries for additional codes that specifically represent dialysis treatment. Show the verified inclusion list and its descriptions.
+
+Evaluate nonspecific codes such as 90999 using their accompanying descriptions and encounter context. Do not automatically equate every dialysis-related charge with treatment.
+
+Do not count the following alone:
+
+- ESKD or dialysis-status diagnosis codes.
+- Dialysis catheter placement.
+- Fistula or graft creation, revision, or assessment.
+- Dialysis access maintenance.
+- Dialysis education or training.
+- Supplies without evidence of a treatment service.
+- Monthly outpatient dialysis-management billing.
+- An order for dialysis without treatment evidence.
+
+Use the service/procedure date rather than billing submission, posting, payment, or extraction date.
+
+A claim posted after discharge may qualify if its service occurred during the admission.
+
+Resolve corrected and replacement claims. Exclude voided, reversed, or cancelled treatment records. Do not require payment as proof that treatment occurred.
+
+Create:
+
+dialysis_billing_code_present = YES / NO / UNCERTAIN
+
+A verified qualifying treatment code linked to this admission may establish YES without a procedure note.
+
+
+4. HEMODIALYSIS PROCEDURE-NOTE EVIDENCE
+
+Inspect available HD procedure-note and treatment-documentation sources, including:
+
+- Hemodialysis procedure notes.
+- Nephrology notes explicitly documenting a performed HD session.
+- Dialysis nursing procedure or treatment notes.
+
+A note qualifies only when its content documents that HD was actually initiated, ongoing, or performed during the same admission.
+
+Examples supporting a positive classification:
+
+- "Hemodialysis completed today."
+- "Patient seen and examined during hemodialysis."
+- "HD initiated at 14:00."
+- A treatment record documenting actual dialysis start and treatment delivery.
+
+A treatment that began but was stopped early still represents dialysis performed. Preserve the interruption status.
+
+Do not classify as positive solely because:
+
+- The note title contains "hemodialysis".
+- A blank procedure template exists.
+- Dialysis was discussed, consented, ordered, or planned.
+- Dialysis was cancelled or deferred before starting.
+- The note states "no indication for dialysis".
+- Historical outpatient dialysis is mentioned.
+- The note describes dialysis during a different admission.
+- A catheter or fistula is documented.
+
+Assess negation, treatment status, and temporality.
+
+Use the documented treatment date/time. Preserve the note creation and signing timestamps separately.
+
+A late-signed note may qualify if it clearly documents treatment during the index admission.
+
+Create:
+
+HD_procedure_note_present = YES / NO / UNCERTAIN
+
+A qualifying HD procedure note may establish YES without a billing code.
+
+If other dialysis modalities are encountered, preserve their modality separately. Do not label CRRT or peritoneal dialysis as conventional HD.
+
+Use available approved NLP or SQL text-processing capabilities. Describe simple keyword or regex methods as rule-based screening rather than validated clinical NLP.
+
+
+5. COMBINED CLASSIFICATION
+
+Create:
+
+dialysis_evidence_during_admission = YES / NO / UNCERTAIN
+
+Assign YES when:
+
+dialysis_billing_code_present = 'YES'
+OR HD_procedure_note_present = 'YES'
+
+Do not change this OR rule to an AND rule.
+
+Create:
+
+dialysis_evidence_source =
+BILLING_CODE_ONLY / HD_NOTE_ONLY / BOTH / NONE / UNCERTAIN
+
+Assign NO when neither source contains qualifying evidence and source coverage and hospitalization follow-up are adequate.
+
+Interpret NO as no qualifying evidence found, not proof that dialysis was impossible or never occurred.
+
+Assign UNCERTAIN when no qualifying positive evidence is established and missing sources, unclear encounter linkage, ambiguous treatment timing, unresolved cancellation, or incomplete follow-up prevent reliable classification.
+
+Keep evidence of a billed procedure distinct from direct clinical documentation. Do not describe billing-only cases as note-confirmed treatment.
+
+A negative statement such as "no dialysis today" does not negate treatment documented on another day of the same admission.
+
+Flag genuine conflicts about the same treatment event for review.
+
+Do not infer dialysis dependence at discharge, chronic dialysis, or the indication for dialysis from this outcome alone.
+
+
+6. REQUIRED OUTPUT
+
+Return one row per admission in rasi_exposed_aki_admissions containing:
+
+- Patient ID.
+- Encounter ID.
+- Admission and discharge timestamps.
+- AKI_within_24h.
+- pre_AKI_outpatient_RASi.
+- Existing kidney-function category.
+- dialysis_billing_code_present.
+- HD_procedure_note_present.
+- dialysis_evidence_during_admission.
+- dialysis_evidence_source.
+- Dialysis modality when supported.
+- Qualifying billing/procedure codes and descriptions.
+- Coding systems.
+- Billing/procedure service dates.
+- First qualifying dialysis evidence date/time.
+- Last qualifying dialysis evidence date/time.
+- Time from admission to first qualifying event when timestamps permit.
+- Number of distinct dialysis service dates.
+- Qualifying note IDs and note types.
+- Note documentation timestamps.
+- Documented treatment timestamps.
+- Supporting note evidence, retained inside REACH.
+- Source tables and record identifiers.
+- Encounter-linkage method.
+- Date-only timing flag.
+- Incomplete-follow-up flag.
+- Missing-source and conflicting-evidence flags.
+- Classification reason.
+
+Do not interpret the number of billing lines or notes as the number of dialysis sessions.
+
+Deduplicate records representing the same event using verified identifiers and timing. Count actual sessions only if reliable session identifiers are available.
+
+Also return:
+
+A. An audit result containing every starting admission.
+
+B. A positive result filtered to:
+dialysis_evidence_during_admission = 'YES'
+
+C. A distinct-patient positive result with qualifying encounter IDs and the number of positive admissions.
+
+
+7. COUNTS AND VALIDATION
+
+Report admissions and distinct patients separately.
+
+Provide:
+
+- Total starting RASi-exposed AKI-positive admissions.
+- Admissions with dialysis evidence YES.
+- Admissions with dialysis evidence NO.
+- Admissions with dialysis evidence UNCERTAIN.
+- BILLING_CODE_ONLY admissions.
+- HD_NOTE_ONLY admissions.
+- BOTH admissions.
+- Distinct patients with at least one positive admission.
+- Positive admissions by documented modality.
+- Admissions with missing sources or incomplete follow-up.
+
+Verify:
+
+- Every assessed admission has AKI_within_24h = 'YES' and pre_AKI_outpatient_RASi = 'YES'.
+- YES + NO + UNCERTAIN equals the starting admission denominator.
+- BILLING_CODE_ONLY + HD_NOTE_ONLY + BOTH equals positive admissions.
+- Every positive has at least one qualifying code or qualifying HD note.
+- Evidence belongs to the same admission.
+- No dialysis event is assigned to multiple admissions without a justified linkage.
+- Joins preserve one row per admission in the final audit result.
+- The distinct-patient result reconciles with the positive-admission result.
+
+
+8. SCHEMA VERIFICATION AND FINAL SQL
+
+Reuse verified project mappings. Inspect missing billing, procedure, and note mappings without guessing table names or columns.
+
+Before final SQL, show:
+
+- Starting cohort source and filters.
+- Billing, procedure, and note sources searched.
+- Patient, encounter, and hospital-account join keys.
+- Exact code list, descriptions, and service-year applicability.
+- Service-date and note-treatment-date rules.
+- Claim-version and cancellation handling.
+- Note-screening and negation logic.
+- OR classification logic.
+- Missing-source and incomplete-follow-up handling.
+
+Generate readable Databricks SQL/Spark SQL with named intermediate steps for:
+
+1. Starting admissions.
+2. Qualifying billing/procedure evidence.
+3. Qualifying HD note evidence.
+4. Evidence deduplication.
+5. Admission-level OR classification.
+6. Positive admissions.
+7. Distinct positive patients.
+8. Counts and validation.
+
+Keep source tables read-only and patient-level results inside REACH.
+
+Return an execution log. Mark unexecuted SQL NOT EXECUTED and unknown counts NOT MEASURED.
+
+Present ambiguous codes, note evidence, and encounter-linkage conflicts for review before proceeding to another outcome.
