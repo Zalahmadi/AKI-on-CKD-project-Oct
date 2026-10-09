@@ -1,0 +1,416 @@
+Using my existing CKD/AKI cohort, build a Databricks SQL/Spark SQL query to identify which patients who were taking RASi before admission and did not receive dialysis during the AKI hospitalization were prescribed, continued, or resumed on RASi at discharge.
+
+Use the existing RASi medication reference list and verified medication mappings.
+
+The primary exposure is a documented discharge instruction or prescription to take RASi after leaving the hospital. A new prescription is not required when the finalized discharge medication reconciliation explicitly instructs continuation.
+
+Distinguish discharge prescribing from confirmed inpatient resumption after a documented medication hold.
+
+
+1. STARTING COHORT
+
+Start from the existing admission-level cohort:
+[FILL IN VERIFIED COHORT TABLE/VIEW INSIDE REACH]
+
+Include only admissions with:
+
+- Existing CKD cohort eligibility.
+- Existing AKI classification = YES.
+- pre_AKI_outpatient_RASi = 'YES'.
+- dialysis_evidence_during_admission = 'NO'.
+
+Reuse the verified AKI-positive field and its established definition. Do not rebuild the CKD or AKI phenotype or change the AKI assessment window.
+
+Exclude dialysis YES and UNCERTAIN admissions from the primary discharge-prescribing analysis. Report these exclusions separately. Do not convert missing dialysis classifications to NO.
+
+Retain the original admission window:
+
+admission_timestamp >= TIMESTAMP '2021-10-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-10-01 00:00:00'
+
+Assess the actual discharge from each qualifying admission, even when discharge occurs after September 30, 2026.
+
+Create:
+
+eligible_aki_no_dialysis_admissions
+
+Preserve one row per qualifying admission and retain multiple qualifying admissions per patient.
+
+Evaluate discharge medication status separately for each admission.
+
+Patients who died in hospital or have not yet been discharged do not have an assessable discharge prescription. Report them separately rather than classifying them as RASi NO.
+
+Preserve discharge disposition. Do not automatically exclude transfers, skilled-nursing-facility discharges, or hospice discharges. Use the final medication instructions for that transition when available.
+
+
+2. REUSE THE RASi REFERENCE LIST
+
+Use:
+
+acei_arb_10062026.xlsx
+Worksheet: Sheet1
+
+Verified reference table/view:
+[FILL IN VERIFIED REFERENCE TABLE/VIEW INSIDE REACH]
+
+The previously reviewed list contains:
+
+- 1,039 unique medication IDs.
+- 557 records labeled ACEi.
+- 482 records labeled ARB.
+
+Reference columns:
+
+medication_class
+medication_id
+medication_name
+simple_generic
+generic_name
+
+Reuse existing verified identifier crosswalks, ingredient mappings, and brand-name aliases.
+
+Verify medication-ID compatibility before joining. Do not assume medication_id is an RxNorm identifier.
+
+Treat blank values and the literal string "NULL" as missing. Do not discard an ID-matched medication because its generic fields are missing.
+
+Prefer exact medication-ID matching or a verified crosswalk. Use normalized names and ingredient mappings to resolve alternative representations of listed products.
+
+Do not rely solely on broad searches for "pril" or "sartan".
+
+Report unmapped potential RASi products separately. Do not silently expand the medication definition or classify an unresolved potential RASi as absent.
+
+
+3. RASi IDENTIFICATION TERMS
+
+Search medication names, generic fields, verified brand aliases, and relevant discharge documentation for the following ingredients.
+
+ACE inhibitors:
+
+- Benazepril.
+- Captopril.
+- Enalapril.
+- Fosinopril.
+- Lisinopril.
+- Moexipril.
+- Perindopril.
+- Quinapril.
+- Ramipril.
+- Trandolapril.
+
+ARB ingredients:
+
+- Azilsartan, including azilsartan medoxomil.
+- Candesartan, including candesartan cilexetil.
+- Eprosartan.
+- Irbesartan.
+- Losartan.
+- Olmesartan, including olmesartan medoxomil.
+- Telmisartan.
+- Valsartan.
+
+Additional listed combinations:
+
+- Sacubitril/valsartan, including Entresto.
+- Aliskiren/valsartan, including Valturna.
+
+Include listed fixed-dose combinations containing a qualifying RASi ingredient, including combinations with hydrochlorothiazide, chlorthalidone, amlodipine, or other ingredients.
+
+Recognize reversed ingredient order, punctuation differences, salt forms, strengths, dosage forms, and verified brand names.
+
+Preserve all active ingredients.
+
+Keep the original workbook class and a separate normalized product class:
+
+- ACEI.
+- ARB.
+- ARNI for sacubitril/valsartan.
+- ARB_PLUS_DIRECT_RENIN_INHIBITOR for aliskiren/valsartan.
+
+Do not infer inclusion of aliskiren-only products from the presence of aliskiren/valsartan in the reference list.
+
+Enalaprilat and IV formulations appear in the list. Inpatient IV administration alone does not establish a discharge RASi prescription. An unusual nonoral discharge regimen requires explicit discharge prescribing evidence and should be flagged for review.
+
+Class-only phrases such as "resume ACE inhibitor" or "restart ARB" can support interpretation but do not independently establish a reference-list medication match unless the intended drug can be resolved.
+
+
+4. FIND THE FINAL DISCHARGE MEDICATION PLAN
+
+Inspect available:
+
+- Finalized discharge medication reconciliation.
+- Discharge medication lists.
+- Discharge prescriptions and electronic prescription orders.
+- After-visit summaries and patient discharge instructions.
+- Discharge summaries.
+- Pharmacy discharge-medication documentation.
+- Medication start, continue, change, stop, and hold sections.
+
+Use inpatient medication orders and MAR records only as supporting evidence of a hold or restart during hospitalization.
+
+Identify:
+
+- Patient and encounter keys.
+- Medication identifiers.
+- Discharge-prescription indicators.
+- Intended outpatient versus inpatient use.
+- Start and stop dates.
+- Order status and cancellation history.
+- Reconciliation status.
+- Document versions and finalization timestamps.
+
+Do not assume an outpatient medication list viewed after discharge reflects what was prescribed at discharge.
+
+Reuse verified mappings and inspect missing sources without guessing table names, columns, or status meanings.
+
+
+5. DISCHARGE TIMING AND VERSION RULES
+
+Determine the medication plan effective when the patient left the hospital.
+
+An order written before discharge may qualify if it was intended for use after discharge and remained part of the finalized discharge regimen.
+
+A discharge document signed after discharge may qualify if it explicitly records the medication plan for that same discharge.
+
+Preserve both:
+
+- Documentation/order timestamp.
+- Intended medication effective date or discharge context.
+
+Do not count a RASi first prescribed at a later outpatient visit as a discharge prescription.
+
+Do not use an arbitrary post-discharge prescription window to infer discharge prescribing.
+
+Resolve draft, superseded, cancelled, and replacement records. Do not select the latest record solely by extraction timestamp.
+
+A later correction explicitly addressing the original discharge plan should be distinguished from a new treatment decision made after discharge.
+
+If a qualifying admission lacks sufficient discharge follow-up or accessible final documentation, flag incomplete ascertainment.
+
+
+6. PRIMARY DISCHARGE CLASSIFICATION
+
+Create:
+
+RASi_prescribed_at_discharge = YES / NO / UNCERTAIN
+
+YES:
+
+At least one reference-list RASi is included in the final discharge regimen with an instruction to take it after discharge.
+
+Qualifying examples:
+
+- "Continue losartan 50 mg daily."
+- "Resume lisinopril at discharge."
+- "Restart Entresto on discharge."
+- A finalized discharge prescription for a qualifying RASi.
+- A RASi listed in the finalized "continue taking" medication section.
+- A qualifying RASi prescribed at discharge after switching from another pre-admission RASi.
+
+Count continuation without a new prescription as YES when the final discharge instructions explicitly support it.
+
+A dose change or switch between qualifying RASi agents does not make the patient unexposed.
+
+NO:
+
+Adequate final discharge documentation shows that no qualifying RASi is prescribed for use after discharge.
+
+Examples:
+
+- Explicit instruction to stop the RASi with no qualifying replacement.
+- Explicit instruction to continue holding all RASi at discharge.
+- A complete finalized discharge medication reconciliation without a RASi and without conflicting prescribing evidence.
+
+UNCERTAIN:
+
+Use when the final medication plan cannot be reliably determined because of missing documentation, incomplete reconciliation, unresolved medication identity, conflicting final instructions, or unclear timing.
+
+Do not classify NO solely because a discharge prescription order is absent.
+
+Do not classify YES solely because a RASi was administered during hospitalization.
+
+
+7. HELD MEDICATIONS AND DELAYED RESTART PLANS
+
+Distinguish immediate discharge prescribing from future restart plans.
+
+Examples:
+
+- "Hold losartan until repeat creatinine."
+- "Consider restarting lisinopril at nephrology follow-up."
+- "Resume ARB when kidney function improves."
+- "Restart in one week."
+
+These statements do not establish immediate resumption at discharge.
+
+Create:
+
+RASi_held_at_discharge = YES / NO / UNCERTAIN
+delayed_RASi_restart_planned = YES / NO / UNCERTAIN
+planned_restart_date = documented date, if available
+restart_condition = documented condition, if available
+
+When the final plan clearly states that the RASi remains held at discharge, classify the primary discharge exposure as NO and preserve the delayed-restart plan separately.
+
+If instructions conflict or timing is unclear, classify UNCERTAIN.
+
+Normal scheduling of the next dose after leaving the hospital is not a delayed clinical restart. Distinguish routine dosing from an explicit treatment hold.
+
+
+8. DISTINGUISH RESUMPTION FROM CONTINUATION
+
+For admissions with RASi_prescribed_at_discharge = YES, determine whether a medication hold and subsequent restart are documented.
+
+Create:
+
+inpatient_RASi_hold_documented = YES / NO / UNCERTAIN
+RASi_resumed_after_documented_hold = YES / NO / UNCERTAIN
+
+Use medication history, clinical notes, inpatient orders, and MAR records to establish the sequence when available.
+
+Do not claim that RASi was "resumed" if a preceding hold cannot be established.
+
+Absence of a documented hold does not prove uninterrupted administration.
+
+Preserve whether the discharge regimen represents:
+
+- Resumption after a documented hold.
+- Continuation without a documented hold.
+- A switch to another qualifying RASi.
+- A dose change.
+- An unresolved treatment sequence.
+
+A patient may have both a documented restart and an agent or dose change. Preserve these as separate attributes.
+
+Compare pre-admission and discharge RASi ingredients and classes without requiring the same drug or dose for the primary YES classification.
+
+
+9. NOTE INTERPRETATION AND CONFLICT RESOLUTION
+
+When structured discharge data are incomplete, use available approved text-processing or NLP methods.
+
+Search for medication-specific instructions including:
+
+- Continue.
+- Resume.
+- Restart.
+- Start.
+- Take.
+- Stop.
+- Discontinue.
+- Hold.
+- Do not resume.
+- Restart after.
+- Reassess at follow-up.
+
+Interpret these terms in context. Distinguish:
+
+- Final instructions from earlier inpatient plans.
+- Current prescriptions from historical medication mentions.
+- Affirmative use from negation.
+- Immediate use from conditional or delayed restart.
+- Medication changes from administrative order replacement.
+
+Prioritize the finalized discharge reconciliation and explicit discharge instructions, while checking the final prescription status and later corrections to the original discharge plan.
+
+Do not let a draft plan override a final stop instruction.
+
+If one RASi is stopped and another is clearly prescribed, classify the admission as YES.
+
+If at least one RASi is unambiguously prescribed, unresolved status of an additional drug does not erase that confirmed exposure. Preserve the additional conflict separately.
+
+If the only candidate medication has unresolved contradictory discharge instructions, classify UNCERTAIN.
+
+Keep patient-level note excerpts inside REACH.
+
+
+10. REQUIRED OUTPUT
+
+Return one row per assessable qualifying discharge containing:
+
+- Patient ID.
+- Encounter ID.
+- Admission and discharge timestamps.
+- Discharge disposition.
+- Existing CKD and AKI variables.
+- pre_AKI_outpatient_RASi.
+- dialysis_evidence_during_admission.
+- RASi_prescribed_at_discharge.
+- Pre-admission RASi IDs, names, ingredients, and classes.
+- Discharge RASi IDs, names, ingredients, and classes.
+- Original reference-list medication classes.
+- Combination-product ingredients.
+- Discharge dose, route, and frequency.
+- Same ingredient versus changed ingredient.
+- Class-switch and dose-change indicators.
+- inpatient_RASi_hold_documented.
+- RASi_resumed_after_documented_hold.
+- RASi_held_at_discharge.
+- delayed_RASi_restart_planned.
+- Planned restart date or condition.
+- Discharge medication action.
+- Prescription/order status.
+- Final reconciliation status.
+- Evidence source tables and record identifiers.
+- Documentation timestamps and effective dates.
+- Medication-matching method.
+- Conflicting-evidence and missing-data flags.
+- Classification reason.
+
+Use arrays or a linked medication-level result when multiple medications qualify.
+
+Also return:
+
+A. An audit of starting admissions and discharge-assessment eligibility.
+
+B. A discharge RASi YES group.
+
+C. A discharge RASi NO group.
+
+D. A separate UNCERTAIN group.
+
+E. A distinct-patient summary showing the number of qualifying discharges in each category.
+
+Do not assign a single permanent discharge-exposure status to a patient with different regimens across admissions.
+
+
+11. COUNTS, VALIDATION, AND SQL
+
+Report admissions and distinct patients separately.
+
+Provide:
+
+- Starting cohort size.
+- Admissions excluded for dialysis YES or UNCERTAIN, if starting from the broader cohort.
+- In-hospital deaths.
+- Admissions not yet discharged or with unresolved discharge status.
+- Assessable qualifying discharges.
+- Discharge RASi YES, NO, and UNCERTAIN counts.
+- Documented resumption after a hold.
+- Continuation without a documented hold.
+- Agent switches and dose changes.
+- Explicit holds at discharge.
+- Delayed or conditional restart plans.
+- Counts by discharge RASi class.
+
+Verify:
+
+- Every assessed admission belongs to the established CKD/AKI-positive cohort.
+- Every assessed admission has pre_AKI_outpatient_RASi = YES.
+- Every assessed admission has dialysis_evidence_during_admission = NO.
+- YES + NO + UNCERTAIN equals assessable qualifying discharges.
+- Every YES has evidence tied to the same discharge.
+- No YES relies solely on inpatient MAR administration.
+- No NO relies solely on absence of a new prescription.
+- Delayed restart plans are not misclassified as immediate discharge resumption.
+- Deaths and ongoing admissions are not assigned RASi NO.
+- Joins preserve one row per admission.
+
+Before final SQL, show verified source tables, join keys, discharge-version rules, medication mappings, classification logic, and missing-data handling.
+
+Then generate complete Databricks SQL/Spark SQL with readable named intermediate steps for cohort selection, discharge evidence, medication matching, final-plan resolution, exposure classification, and validation.
+
+Keep source tables read-only and patient-level results inside REACH.
+
+Return an execution log. Mark unexecuted code NOT EXECUTED and unknown counts NOT MEASURED.
+
+Present unresolved discharge-medication conflicts for review before comparing outcomes between the RASi YES and NO groups.
