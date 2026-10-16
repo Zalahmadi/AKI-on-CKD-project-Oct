@@ -1,0 +1,162 @@
+In the established cohort of adult patients with CKD who were taking an RAS inhibitors before hospital admission and subsequently developed AKI, compare patients according to whether the ACE inhibitor/ARB was continued or re-prescribed at hospital discharge versus not continued at discharge.
+
+Use only structured Epic/EHR data. Do not use progress notes, discharge summaries, nephrology notes, radiology narrative, free-text documentation, or NLP-extracted variables.
+
+First identify the available structured tables and fields for the following characteristics, then build the comparison dataset.
+
+Demographics:
+- Age at admission
+- Sex
+- Race
+- Ethnicity
+- BMI using structured height and weight
+
+Baseline kidney characteristics:
+- Baseline serum creatinine
+- Baseline eGFR
+- CKD stage derived from pre-admission kidney function
+- Baseline potassium
+- Baseline bicarbonate/CO2
+- UACR
+- UPCR
+- Urine albumin
+- Urine protein
+- Serum albumin
+
+Comorbidities using structured diagnosis/problem-list codes:
+- Hypertension
+- Diabetes mellitus
+- Heart failure
+- HFrEF if a structured diagnosis code is available
+- Coronary artery disease
+- Prior myocardial infarction
+- Peripheral arterial disease
+- Cerebrovascular disease/stroke
+- Atrial fibrillation
+- Chronic liver disease
+- Malignancy
+- Dementia
+
+Pre-admission medications using structured medication records:
+- ACE inhibitor
+- ARB
+- Specific ACE inhibitor/ARB
+- Loop diuretic
+- Thiazide/thiazide-like diuretic
+- Mineralocorticoid receptor antagonist
+- SGLT2 inhibitor
+- Beta-blocker
+- Calcium-channel blocker
+- Potassium supplement
+- Potassium binder
+- NSAID
+
+AKI severity:
+- Admission serum creatinine
+- Peak serum creatinine during hospitalization
+- Admission BUN
+- Peak BUN
+- AKI stage derived from structured creatinine data
+- Lowest eGFR during hospitalization
+- Dialysis during hospitalization using structured procedure/order data
+- CRRT using structured procedure/order data
+- Intermittent hemodialysis using structured procedure/order data
+
+Electrolyte and acid-base characteristics:
+- Admission potassium
+- Maximum potassium during hospitalization
+- Most recent potassium before discharge
+- Admission bicarbonate/CO2
+- Minimum bicarbonate/CO2 during hospitalization
+- Most recent bicarbonate/CO2 before discharge
+- Admission sodium
+- Minimum sodium
+- Maximum sodium
+
+Hemodynamic characteristics using structured vital-sign data:
+- Admission systolic blood pressure
+- Admission diastolic blood pressure
+- Lowest systolic blood pressure during hospitalization
+- Lowest mean arterial pressure during hospitalization, if available
+- Most recent systolic blood pressure before discharge
+- Most recent diastolic blood pressure before discharge
+- Mean systolic blood pressure during the final 24 hours before discharge
+- Mean diastolic blood pressure during the final 24 hours before discharge
+
+Illness severity using structured encounter, medication, and procedure data:
+- ICU admission
+- ICU length of stay
+- Vasopressor administration
+- Mechanical ventilation
+- Hospital length of stay
+- Transfer to ICU
+- Number of ICU days
+
+Structured acute diagnoses/events:
+- Sepsis
+- Septic shock
+- Hypotension
+- Acute heart failure
+- Cardiogenic shock
+- Volume depletion/dehydration
+- Acute myocardial infarction
+- Major surgery during admission
+- Urinary obstruction
+- Contrast exposure if available as a structured medication/procedure record
+
+Kidney recovery near discharge:
+- Most recent serum creatinine before discharge
+- Most recent eGFR before discharge
+- Serum creatinine 24 hours before discharge, if available
+- Serum creatinine 48 hours before discharge, if available
+- Serum creatinine 72 hours before discharge, if available
+- Absolute difference between peak and discharge creatinine
+- Difference between baseline and discharge creatinine
+- Ratio of discharge creatinine to baseline creatinine, if supported by the analytic environment
+- Persistent AKI at discharge using a prespecified structured creatinine-based definition
+- Dialysis dependence at discharge using structured dialysis orders/procedures and discharge medication/order data where available
+
+Discharge medications:
+- ACE inhibitor prescribed at discharge
+- ARB prescribed at discharge
+- Loop diuretic
+- Thiazide/thiazide-like diuretic
+- Mineralocorticoid receptor antagonist
+- SGLT2 inhibitor
+- Beta-blocker
+- Calcium-channel blocker
+- Potassium binder
+- Potassium supplement
+- Number of antihypertensive medication classes prescribed at discharge
+
+Discharge status using structured encounter/ADT fields:
+- Discharge disposition
+- Home
+- Home with services
+- Skilled nursing facility
+- Inpatient rehabilitation
+- Hospice
+- Other structured discharge location
+
+For every variable:
+1. Use structured Epic/EHR data only.
+2. Identify the exact source table, field, code set, medication concept, procedure concept, flowsheet field, or laboratory concept used.
+3. Do not infer a diagnosis or clinical condition from free text.
+4. Do not search narrative notes.
+5. Clearly define the time window for baseline, hospitalization, and discharge measurements.
+6. For discharge laboratory and vital-sign variables, use the closest structured measurement before the discharge timestamp.
+7. Report missingness for every variable.
+8. Do not silently exclude patients with missing data.
+9. If a requested variable is not reliably available as structured data, mark it as unavailable rather than approximating it from narrative documentation.
+
+Create a comparison table with:
+- Overall cohort
+- RASi continued/re-prescribed at discharge
+- RASi not continued at discharge
+- Appropriate descriptive statistics for each variable
+- Standardized mean difference for each characteristic, if supported
+
+Also create a structured-data dictionary with:
+variable name | Epic source/table | field/concept/code | time window | derivation logic | missingness
+
+The purpose is to identify objective structured characteristics that may influence the clinician's decision to continue versus withhold ACE inhibitor/ARB therapy at hospital discharge after AKI.
