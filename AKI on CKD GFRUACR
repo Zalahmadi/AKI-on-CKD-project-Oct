@@ -1,7 +1,7 @@
-Using the previously identified adult, non-dialysis G3a–G5 cohort, build a Databricks SQL/Spark SQL query to identify inpatient admissions dated October 1, 2021 through September 30, 2026, with serum-creatinine-defined KDIGO AKI criteria met by admission or within the first 24 hours of admission.
+Using the previously identified adult, non-dialysis G3a–G5 cohort, build a Databricks SQL/Spark SQL query to identify inpatient admissions dated October 1, 2021 through September 30, 2026, with serum-creatinine-defined KDIGO AKI criteria met by admission or within the first 48 hours of admission.
 
 Research question:
-Which existing cohort members met creatinine-based AKI criteria by admission or within the first 24 hours?
+Which existing cohort members met creatinine-based AKI criteria by admission or within the first 72 hours before admission?
 
 Inputs:
 Existing cohort, inpatient admissions, and serum/plasma creatinine results.
@@ -88,7 +88,7 @@ Require:
 
 For every assessed creatinine, search backward from its specimen timestamp for qualifying earlier measurements. Compare samples in chronological order and preserve the supporting pair.
 
-The 24-hour assessment window determines when AKI must be identified. It does not replace the 48-hour or 7-day creatinine comparison intervals.
+The 48-hour assessment window determines when AKI must be identified. It does not replace the 48-hour or 7-day creatinine comparison intervals.
 
 Do not use:
 
@@ -120,7 +120,7 @@ For the primary automated phenotype:
 
 Create:
 
-AKI_within_24h = YES / NO / UNCERTAIN
+AKI_within_48h = YES / NO / UNCERTAIN
 
 Assign YES when at least one valid creatinine pair satisfies criterion A or B by the assessment deadline, using the linked ED/observation episode or first-24-hour inpatient measurements described above.
 
