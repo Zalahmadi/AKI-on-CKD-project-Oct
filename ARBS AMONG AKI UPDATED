@@ -1,0 +1,600 @@
+Using the previously identified AKI population among the existing adult, non-dialysis CKD cohort, determine which qualifying AKI admissions had active outpatient renin-angiotensin system inhibitor (RASi) use immediately before admission.
+
+The underlying CKD cohort includes:
+
+- CKD G3–G5 patients.
+- CKD G1–G2 patients with CKD established by qualifying UACR/albuminuria evidence.
+
+The AKI population has already been identified among these CKD patients using serum-creatinine-defined KDIGO AKI criteria within 48 hours before through 48 hours after inpatient admission.
+
+Do not rebuild or modify the CKD or AKI phenotype.
+
+The starting denominator for this task is the previously identified AKI admissions, not the entire CKD cohort.
+
+Evaluate RASi exposure separately for each AKI admission.
+
+
+## 1. STARTING POPULATION
+
+Reuse the previously identified AKI cohort in REACH.
+
+Use qualifying AKI admissions with:
+
+admission_timestamp >= TIMESTAMP '2021-10-01 00:00:00'
+AND admission_timestamp < TIMESTAMP '2026-10-01 00:00:00'
+
+Preserve the existing:
+
+- Patient ID.
+- Encounter ID.
+- Admission/discharge timestamps.
+- CKD G-category.
+- CKD qualification pathway.
+- UACR-defined CKD indicator.
+- AKI criterion.
+- AKI timing.
+- Existing qualifying creatinine information.
+
+Do not:
+
+- Re-identify CKD.
+- Re-identify AKI.
+- Recalculate creatinine pairs.
+- Add CKD or AKI ICD criteria.
+- Add new exclusions.
+- Remove AKI admissions because medication information is missing.
+
+If the source table/view is not immediately known, inspect the existing REACH project and reuse the previously created AKI result rather than recreating it.
+
+
+## 2. RASi MEDICATION DEFINITION
+
+Use `acei_arb_10062026.xlsx`, Sheet1, or its verified imported REACH table/view as the primary medication reference list.
+
+Previously reported structure:
+
+- 1,039 medication records.
+- 1,039 unique medication_id values.
+- 557 ACEi records.
+- 482 ARB records.
+
+Expected fields:
+
+- medication_class
+- medication_id
+- medication_name
+- simple_generic
+- generic_name
+
+Verify these counts and identifier compatibility before use.
+
+Do not assume medication_id is RxNorm.
+
+### ACE inhibitors to recognize
+
+- Benazepril
+- Captopril
+- Enalapril
+- Fosinopril
+- Lisinopril
+- Moexipril
+- Perindopril
+- Quinapril
+- Ramipril
+- Trandolapril
+
+Enalaprilat may appear in the medication reference list, but intravenous enalaprilat must not establish outpatient RASi exposure unless explicit pre-admission/home use is documented.
+
+### ARBs to recognize
+
+- Azilsartan
+- Candesartan
+- Eprosartan
+- Irbesartan
+- Losartan
+- Olmesartan
+- Telmisartan
+- Valsartan
+
+### Combination products
+
+Include any fixed-dose product in the reference list containing one of the above ACEi or ARB ingredients.
+
+Examples include, but are not limited to:
+
+ACEi combinations:
+- Lisinopril/hydrochlorothiazide
+- Benazepril/amlodipine
+- Benazepril/hydrochlorothiazide
+- Enalapril/hydrochlorothiazide
+- Captopril/hydrochlorothiazide
+- Trandolapril/verapamil
+
+ARB combinations:
+- Losartan/hydrochlorothiazide
+- Valsartan/hydrochlorothiazide
+- Valsartan/amlodipine
+- Valsartan/amlodipine/hydrochlorothiazide
+- Irbesartan/hydrochlorothiazide
+- Candesartan/hydrochlorothiazide
+- Olmesartan/hydrochlorothiazide
+- Olmesartan/amlodipine
+- Olmesartan/amlodipine/hydrochlorothiazide
+- Telmisartan/hydrochlorothiazide
+- Telmisartan/amlodipine
+- Azilsartan/chlorthalidone
+
+### Special products
+
+Sacubitril/valsartan, including Entresto:
+- Include if present in the supplied reference list and outpatient exposure criteria are met.
+- Normalized class = ARNI.
+- Preserve valsartan as the ARB ingredient.
+- Preserve sacubitril as the additional ingredient.
+- Preserve the original reference-list class separately.
+
+Aliskiren/valsartan, including Valturna:
+- Include if present in the supplied reference list and exposure criteria are met.
+- Normalized class = ARB_PLUS_DIRECT_RENIN_INHIBITOR.
+- Preserve both ingredients.
+- Do not infer that aliskiren alone is included.
+
+The supplied reference list remains authoritative. The ingredient list above should be used to validate and normalize it, not to silently add medications outside the supplied definition.
+
+
+## 3. MEDICATION MATCHING
+
+Use this priority:
+
+1. Exact medication_id match when identifier systems are compatible.
+2. Verified local crosswalk.
+3. Verified medication-dictionary/RxNorm mapping linked back to the reference list.
+4. Normalized medication-name matching for candidate retrieval followed by verification.
+
+Do not classify medications solely using broad string rules such as `"pril"` or `"sartan"`.
+
+Preserve:
+
+- Source medication ID.
+- Reference medication ID.
+- Medication name.
+- RASi ingredient.
+- Original reference-list class.
+- Normalized class.
+- Combination-product ingredients.
+- Match method.
+
+Report unmatched or ambiguous reference medications separately.
+
+
+## 4. PRE-ADMISSION RASi EXPOSURE WINDOW
+
+For each AKI admission define:
+
+RASi_exposure_window_start =
+admission_timestamp - INTERVAL 90 DAYS
+
+RASi_exposure_window_end =
+admission_timestamp
+
+For evidence generated before admission:
+
+evidence_timestamp >= RASi_exposure_window_start
+AND evidence_timestamp < admission_timestamp
+
+The target is active outpatient RASi use immediately before admission.
+
+A medication appearing anywhere in the preceding 90 days is not automatically sufficient.
+
+There must be credible evidence that use continued until, or immediately before, admission.
+
+
+## 5. OLDER MEDICATION RECORDS
+
+Search before the 90-day window only to establish continuity.
+
+Examples:
+
+- Prescription 120 days before admission with a documented 180-day active period extending through admission → may support exposure.
+- Pharmacy fill before the 90-day window with documented days supply extending through admission → may support exposure.
+- RASi appearing six months earlier with no subsequent evidence of use → does not establish exposure.
+
+Older records alone must not define exposure.
+
+
+## 6. ADMISSION MEDICATION RECONCILIATION: TIMING RULE
+
+Keep two concepts separate:
+
+`documentation_timestamp` = when the record was entered.
+
+`medication_effective_time` = when the medication was actually being used or the time period described by the record.
+
+Admission medication reconciliation, H&P, or another admission note may be documented after the inpatient admission timestamp and still confirm pre-admission exposure if it explicitly says the RASi was:
+
+- A home medication.
+- A prior-to-admission medication.
+- Being taken before presentation.
+- A current outpatient medication.
+- A home medication subsequently held or stopped at presentation.
+
+Therefore:
+
+Do not reject medication reconciliation merely because:
+
+documentation_timestamp >= admission_timestamp
+
+Instead create:
+
+- retrospective_pre_admission_confirmation
+- documentation_timestamp
+- medication_effective_time
+- home_medication_status
+- hold_or_stop_at_admission_status
+
+If a reconciliation note entered 3 hours after admission states "home losartan 100 mg daily, held on admission," this supports pre-admission exposure.
+
+Do not use a post-admission record when it describes only:
+
+- Inpatient initiation.
+- Inpatient MAR administration.
+- A recommendation to start treatment.
+- A discharge prescription.
+- Medication status with no pre-admission/home context.
+
+
+## 7. QUALIFYING EVIDENCE
+
+Evidence may support active pre-admission RASi use when it includes:
+
+- Home/prior-to-admission medication reconciliation.
+- Explicit patient-reported home use.
+- Active outpatient prescription with credible coverage through admission.
+- Pharmacy fill with documented days supply covering admission.
+- Recent outpatient medication list supporting current use.
+- Recent outpatient note stating current use.
+- Admission H&P explicitly identifying the medication as a home medication.
+- Documentation that a home RASi was held at presentation.
+
+A home RASi held because of AKI, hyperkalemia, hypotension, surgery, or another acute issue still counts as pre-admission exposure if use before presentation is established.
+
+
+## 8. EVIDENCE THAT DOES NOT QUALIFY BY ITSELF
+
+Do not classify YES solely from:
+
+- Old historical prescription.
+- Remote medication list.
+- Prescription ending before admission.
+- Pharmacy supply ending before admission.
+- Inpatient MAR.
+- ED administration.
+- Observation-unit administration.
+- Medication first initiated during hospitalization.
+- Medication first prescribed at discharge.
+- "Previously on..."
+- "No longer taking..."
+- "Stopped..."
+- "Discontinued..."
+
+Distinguish:
+
+PRE_ADMISSION_ACTIVE → HELD_AT_PRESENTATION
+
+from:
+
+STOPPED_BEFORE_PRESENTATION
+
+The first supports exposure.
+
+The second does not.
+
+
+## 9. PHARMACY AND PRESCRIPTION LOGIC
+
+For prescriptions evaluate:
+
+- Start date.
+- Stop/end date.
+- Discontinuation date.
+- Status.
+- Refill/renewal.
+- Replacement order.
+- Dose/formulation changes.
+
+Do not mistake order replacement or dose change for treatment cessation.
+
+Do not assume a missing end date means indefinite use.
+
+For pharmacy data use:
+
+- Fill date.
+- Days supply.
+- Quantity when useful.
+- Product/medication ID.
+
+Calculate documented coverage through admission.
+
+Do not invent missing days supply or assume:
+
+- Grace periods.
+- Stockpiling.
+- Undocumented refills.
+- Continued medication possession after supply ended.
+
+Dispensing supports medication availability but does not prove ingestion.
+
+
+## 10. NOTE / NLP EVIDENCE
+
+Use available outpatient notes, medication-reconciliation documentation, and admission H&P to supplement structured data.
+
+Assess:
+
+- Medication identity.
+- Current vs historical use.
+- Home use.
+- Negation.
+- Temporality.
+- Discontinuation.
+- Hold timing.
+- Continue/stop language.
+- Patient-reported use.
+
+Supporting examples:
+
+- "Currently taking losartan."
+- "Home lisinopril."
+- "On Entresto at home."
+- "Continues valsartan."
+- "Home losartan held due to AKI."
+
+Against exposure:
+
+- "Previously on lisinopril."
+- "Losartan discontinued last month."
+- "Patient stopped valsartan before admission."
+- "Consider starting an ARB."
+- "Started valsartan during hospitalization."
+
+If only SQL/regex searching is available, call it rule-based text screening, not validated NLP.
+
+
+## 11. CONFLICT RESOLUTION
+
+Use evidence explicitness, timing, and reliability.
+
+General priority:
+
+1. Explicit home/prior-to-admission medication reconciliation.
+2. Explicit recent clinician documentation of use or nonuse.
+3. Structured home medication data with reliable dates.
+4. Pharmacy fill whose days supply covers admission.
+5. Active outpatient prescription with credible coverage through admission.
+6. Recent active outpatient medication list.
+7. Older records used only for continuity.
+
+Prefer newer explicit evidence over older evidence.
+
+Do not count copied medication lists as independent confirmation.
+
+If credible sources remain contradictory, classify exposure as UNCERTAIN.
+
+
+## 12. FINAL CLASSIFICATION
+
+First classify each RASi:
+
+`medication_pre_AKI_status = ACTIVE / NOT_ACTIVE / UNCERTAIN`
+
+Then create admission-level:
+
+`pre_AKI_outpatient_RASi = YES / NO / UNCERTAIN`
+
+YES:
+At least one verified RASi has credible evidence of active outpatient use immediately before admission.
+
+NO:
+Medication ascertainment is adequate and supports no active RASi immediately before admission.
+
+UNCERTAIN:
+Use when medication status cannot be resolved because of:
+
+- Incomplete medication history.
+- Historical-only evidence.
+- Unclear stop/start dates.
+- Conflicting sources.
+- Insufficient continuity evidence.
+- Uncertain medication identity.
+- Inadequate medication ascertainment.
+
+Absence of a RASi record alone is not sufficient for NO.
+
+Admission-level rule:
+
+- Any reliably ACTIVE RASi → YES.
+- No ACTIVE RASi but unresolved possible use → UNCERTAIN.
+- NO only when ascertainment is adequate and no active RASi remains.
+
+
+## 13. EXPOSURE CONFIDENCE
+
+Create:
+
+`RASi_exposure_confidence = HIGH / MODERATE / LOW`
+
+HIGH:
+Direct home-medication/reconciliation evidence or multiple concordant sources.
+
+MODERATE:
+Strong structured evidence supporting continued use through admission without direct home-medication confirmation.
+
+LOW:
+Limited, indirect, remote, or partially conflicting evidence.
+
+Confidence must not override the YES/NO/UNCERTAIN classification.
+
+
+## 14. REQUIRED OUTPUTS
+
+Create:
+
+### A. RASi admission audit
+One row per previously identified AKI admission containing:
+
+- Patient ID.
+- Encounter ID.
+- Admission timestamp.
+- Existing CKD/AKI variables.
+- Exposure-window start/end.
+- pre_AKI_outpatient_RASi.
+- RASi_exposure_confidence.
+- RASi ingredient/class/product.
+- Medication IDs.
+- Combination ingredients.
+- Dose/frequency/route when available.
+- Prescription start/stop.
+- Fill date/days supply.
+- Coverage-through-admission.
+- Home-medication confirmation.
+- retrospective_pre_admission_confirmation.
+- documentation_timestamp.
+- medication_effective_time.
+- Hold-at-admission flag.
+- Stopped-before-admission flag.
+- Note/NLP evidence.
+- Evidence sources.
+- Match method.
+- Conflict flag.
+- Medication ascertainment adequacy.
+- Classification reason.
+
+Do not multiply admission rows when multiple medications qualify. Use arrays or a linked evidence table.
+
+### B. Medication evidence table
+One row per:
+
+AKI admission × medication × evidence record.
+
+### C. Exposed AKI admissions
+Only:
+
+pre_AKI_outpatient_RASi = YES
+
+### D. Distinct exposed patients
+One row per patient with at least one YES admission, including:
+
+- Number of qualifying AKI admissions.
+- Number of exposed AKI admissions.
+- First exposed admission.
+- Last exposed admission.
+- Exposed encounter IDs.
+
+
+## 15. COUNTS AND VALIDATION
+
+Report:
+
+- Starting AKI admissions.
+- Starting distinct patients.
+- YES / NO / UNCERTAIN admissions.
+- Distinct exposed patients.
+- ACEi exposures.
+- ARB exposures.
+- ARNI exposures.
+- Combination-product exposures.
+- Medication-reconciliation-supported exposures.
+- Pharmacy-supported exposures.
+- Note-supported exposures.
+- Cases confirmed retrospectively by admission reconciliation.
+- Conflicting cases.
+- Admissions with inadequate medication ascertainment.
+- Unmatched medication IDs.
+
+Verify:
+
+YES + NO + UNCERTAIN = starting AKI admission denominator.
+
+Every YES must have:
+
+1. A verified RASi match.
+2. Credible evidence of active use immediately before admission.
+
+No YES may depend solely on inpatient/ED/observation administration.
+
+No NO may depend only on missing medication records.
+
+Final audit must contain exactly one row per starting AKI admission.
+
+
+## 16. BEFORE FINAL SQL
+
+Before generating SQL, briefly show:
+
+1. Existing AKI cohort source.
+2. RASi reference-list source and validation.
+3. Medication data sources.
+4. Pharmacy source.
+5. Medication-reconciliation source.
+6. Note source.
+7. Medication identifier mapping.
+8. 90-day exposure logic.
+9. documentation_timestamp vs medication_effective_time logic.
+10. Prescription and pharmacy coverage rules.
+11. Conflict hierarchy.
+12. YES/NO/UNCERTAIN rules.
+
+Inspect the existing REACH project to identify these mappings.
+
+Do not ask me to fill in table or column names that can be discovered in REACH.
+
+Do not invent unverifiable mappings.
+
+
+## 17. FINAL SQL
+
+Generate readable Databricks SQL/Spark SQL using named intermediate steps such as:
+
+1. identified_aki_population
+2. rasi_reference
+3. rasi_medication_mapping
+4. outpatient_medications
+5. home_medication_reconciliation
+6. pharmacy_evidence
+7. note_evidence
+8. all_rasi_evidence
+9. temporal_exposure_assessment
+10. medication_level_classification
+11. admission_level_classification
+12. rasi_admission_audit
+13. rasi_exposed_admissions
+14. rasi_exposed_patients
+15. validation_counts
+
+Keep source tables read-only and patient-level results inside REACH.
+
+Return an execution log.
+
+Mark unexecuted SQL:
+
+NOT EXECUTED
+
+Mark unavailable counts:
+
+NOT MEASURED
+
+Do not fabricate counts or source mappings.
+
+Stop after identifying pre-admission outpatient RASi exposure.
+
+Do not yet analyze:
+
+- In-hospital RASi continuation.
+- RASi restart timing.
+- Discharge RASi prescribing.
+- ICU admission.
+- Length of stay.
+- Mortality.
+- Other outcomes.
+
+Present unresolved exposure cases for review before moving to the next study step.
