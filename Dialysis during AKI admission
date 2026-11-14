@@ -11,7 +11,7 @@ Start from the existing admission-level results:
 
 Include only admissions satisfying:
 
-AKI_within_24h = 'YES'
+AKI_within_48h = 'YES'
 AND pre_AKI_outpatient_RASi = 'YES'
 
 Retain the original admission dates:
@@ -202,7 +202,7 @@ Return one row per admission in rasi_exposed_aki_admissions containing:
 - Patient ID.
 - Encounter ID.
 - Admission and discharge timestamps.
-- AKI_within_24h.
+- AKI_within_48h.
 - pre_AKI_outpatient_RASi.
 - Existing kidney-function category.
 - dialysis_billing_code_present.
@@ -261,7 +261,7 @@ Provide:
 
 Verify:
 
-- Every assessed admission has AKI_within_24h = 'YES' and pre_AKI_outpatient_RASi = 'YES'.
+- Every assessed admission has AKI_within_48h = 'YES' and pre_AKI_outpatient_RASi = 'YES'.
 - YES + NO + UNCERTAIN equals the starting admission denominator.
 - BILLING_CODE_ONLY + HD_NOTE_ONLY + BOTH equals positive admissions.
 - Every positive has at least one qualifying code or qualifying HD note.
