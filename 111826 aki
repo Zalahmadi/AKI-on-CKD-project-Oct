@@ -1,0 +1,90 @@
+You are helping me build a Databricks SQL query in the REACH workspace (schema `deid.derived`) for a nephrology research project: restarting RAAS inhibitors at discharge in CKD patients after AKI. In this step, I need to find **inpatient admissions with AKI within 48 hours of admission** among a CKD cohort I already built.
+
+## 0. My existing CKD cohort (from a prior notebook)
+
+The CKD cohort already excludes patients on chronic dialysis before admission. Here is the code or table that defines it:
+
+```sql
+-- >>> PASTE CKD COHORT SQL / TABLE NAME HERE <<<
+-- (the output should give one row per cohort_id, plus the CKD index/diagnosis date if available)
+
+
+-- >>> END PASTE <<<
+```
+
+**Do not use, reference, or copy code from any other notebook, saved query, or derived cohort table in the workspace.** The only prior work you may use is the CKD cohort code pasted above. Build everything else in this query from the raw `deid.derived` tables (`lab_results`, `epic_all_encounters`). If you think you need something from another notebook, stop and ask me first.
+
+Use this as a CTE called `ckd_cohort`. If it gives a CKD index date, only keep admissions on or after that date.
+
+## 1. Before writing the query
+
+Run `DESCRIBE` on `deid.derived.lab_results` and `deid.derived.epic_all_encounters`. Use the real column names in the query. Do not guess them. Tell me which columns you picked for:
+- patient ID (`cohort_id`) and encounter ID (`pat_enc_csn_id`)
+- lab component code, numeric result value, result unit, and lab time (prefer specimen collection time, then result time)
+- admission and discharge datetime, `enc_type`, `inpatient_flag`, `has_hospital_enc`, `ed_visit_yn`
+
+## 2. Creatinine labs
+
+- From `lab_results`, keep serum creatinine with component codes `CREATININE`, `CREATWB`, and `EPOCCREAT`.
+- Keep only numeric results in mg/dL. If a result is in µmol/L, divide it by 88.4. Drop values that are null, non-numeric, below 0.2, or above 20 mg/dL.
+- Remove exact duplicates (same patient, same time, same value).
+- Join each lab to its encounter so it is tagged as **outpatient** or **inpatient/ED**.
+  - Outpatient means the encounter is not inpatient (`inpatient_flag` is false/0) and not an ED visit (`ed_visit_yn` is not Y).
+
+## 3. Index admissions
+
+- From `epic_all_encounters`, keep inpatient hospital admissions (`inpatient_flag` = 1 / `has_hospital_enc`) for patients in `ckd_cohort`.
+- Each admission has `admit_dt` and `discharge_dt`.
+- Keep every admission for now. Later in the query, flag the first AKI admission per patient.
+
+## 4. Baseline creatinine (per admission)
+
+Baseline lookback window: **outpatient** creatinine values with lab time from `admit_dt - 365 days` up to `admit_dt`, not including `admit_dt`.
+
+Let n be the number of outpatient creatinine values in that window:
+- **n = 1:** baseline = that single value.
+- **n = 2:** baseline = the average of the two values.
+- **n ≥ 3:** baseline = the **median** of the values in the **30 days of that year closest to admission**. That is the 30-day window ending at the most recent outpatient creatinine before admission. If that 30-day window has only 1 or 2 values, use the 1-value or 2-value rule on those values.
+- **n = 0:** **exclude the admission.** Only admissions with an outpatient baseline creatinine go forward.
+
+Use `median()` or `percentile(x, 0.5)`. Do not use `percentile_approx`.
+
+Output columns: `baseline_cr`, `baseline_n_values_365d`, `baseline_method` ('single', 'mean_2', 'median_30d'), and `baseline_last_date`.
+
+## 5. AKI definition
+
+AKI window: creatinine values (inpatient, ED, or outpatient) with lab time from **`admit_dt - 48 hours` to `admit_dt + 48 hours`**. This covers the 48 hours before admission (including the ED), the admission itself, and the first 48 hours after admission.
+
+Within that window:
+- `peak_cr` = the maximum creatinine, and `peak_cr_time` = when it was drawn.
+- `aki_abs` = 1 if `peak_cr - baseline_cr >= 0.3` mg/dL.
+- `aki_rel` = 1 if `peak_cr >= 1.5 * baseline_cr` (a 50% or greater rise).
+- **`aki_flag` = 1 if `aki_abs` = 1 OR `aki_rel` = 1.** It is 0 otherwise. Exclude admissions with no creatinine in the window.
+- Also compute the KDIGO creatinine stage using `peak_cr / baseline_cr`:
+  - Stage 1: ratio of 1.5 to 1.9, or a rise of at least 0.3 mg/dL
+  - Stage 2: ratio of 2.0 to 2.9
+  - Stage 3: ratio of 3.0 or more, or `peak_cr >= 4.0`
+
+## 6. Output
+
+**Table 1:** one row per admission, saved as `<my_schema>.ckd_aki_admissions`, with these columns:
+
+`cohort_id, pat_enc_csn_id, admit_dt, discharge_dt, baseline_cr, baseline_method, baseline_n_values_365d, n_cr_in_window, first_cr_in_window, peak_cr, peak_cr_time, abs_change, pct_change, aki_abs, aki_rel, aki_flag, kdigo_stage, first_aki_admission_flag`
+
+**Table 2:** a summary with these counts:
+- CKD patients
+- patients with ≥1 inpatient admission
+- admissions with a baseline creatinine
+- admissions with a creatinine in the AKI window
+- AKI admissions, split by `aki_abs` only, `aki_rel` only, and both
+- unique patients with AKI
+- AKI admissions by KDIGO stage
+
+## 7. Rules
+
+- Write the query as one readable query made of named CTEs (`ckd_cohort`, `cr_labs`, `admissions`, `baseline`, `aki_window`, `aki_final`), with a short comment above each one.
+- Use only the pasted CKD cohort code and the raw `deid.derived` tables. Do not use other notebooks or their outputs.
+- Use timestamps, not dates, for the ±48-hour window.
+- Do not use lab values drawn after `admit_dt + 48h` to define AKI.
+- List any assumptions you made, for example how you decided a lab was outpatient.
+- After it runs, show 10 random AKI admissions and 5 non-AKI admissions with their baseline values and window values, so I can check them by hand.
